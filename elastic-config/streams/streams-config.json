@@ -1,0 +1,198 @@
+{
+  "stream_id": "nova7-telemetry",
+  "name": "NOVA-7 Telemetry Stream",
+  "description": "Unified telemetry stream configuration for the NOVA-7 Orbital Insertion mission. Routes OpenTelemetry logs, metrics, and traces through Elasticsearch data streams with appropriate processing, enrichment, and retention policies.",
+  "ingest": {
+    "sources": [
+      {
+        "id": "otel-logs",
+        "type": "data_stream",
+        "data_stream": {
+          "type": "logs",
+          "dataset": "generic",
+          "namespace": "default"
+        },
+        "description": "OpenTelemetry logs from all 9 NOVA-7 services via OTel Collector"
+      },
+      {
+        "id": "otel-metrics",
+        "type": "data_stream",
+        "data_stream": {
+          "type": "metrics",
+          "dataset": "generic",
+          "namespace": "default"
+        },
+        "description": "OpenTelemetry metrics (gauges, counters) from all services"
+      },
+      {
+        "id": "otel-traces",
+        "type": "data_stream",
+        "data_stream": {
+          "type": "traces",
+          "dataset": "generic",
+          "namespace": "default"
+        },
+        "description": "OpenTelemetry distributed traces from all services"
+      }
+    ]
+  },
+  "processing": {
+    "pipelines": [
+      {
+        "id": "nova7-log-enrichment",
+        "description": "Enrich log records with mission context and normalized severity",
+        "processors": [
+          {
+            "type": "set",
+            "field": "mission.id",
+            "value": "NOVA-7"
+          },
+          {
+            "type": "set",
+            "field": "mission.name",
+            "value": "NOVA-7 Orbital Insertion"
+          },
+          {
+            "type": "script",
+            "description": "Map OTel severity numbers to standard log levels",
+            "source": "if (ctx.severityNumber != null) { if (ctx.severityNumber >= 17) { ctx.log_level_normalized = 'ERROR' } else if (ctx.severityNumber >= 13) { ctx.log_level_normalized = 'WARN' } else if (ctx.severityNumber >= 9) { ctx.log_level_normalized = 'INFO' } else { ctx.log_level_normalized = 'DEBUG' } }"
+          },
+          {
+            "type": "geoip",
+            "field": "cloud.region",
+            "target_field": "cloud.geo",
+            "description": "Resolve cloud region to geographic coordinates for map visualization",
+            "ignore_missing": true,
+            "region_lookup": {
+              "us-east-1": { "lat": 39.0438, "lon": -77.4874, "name": "N. Virginia" },
+              "us-central1": { "lat": 41.2619, "lon": -95.8608, "name": "Iowa" },
+              "eastus": { "lat": 37.3719, "lon": -79.8164, "name": "Virginia" }
+            }
+          },
+          {
+            "type": "set",
+            "description": "Tag error logs with the subsystem domain for dashboard filtering",
+            "condition": "ctx.error?.type != null",
+            "field": "event.category",
+            "value": "anomaly"
+          }
+        ]
+      },
+      {
+        "id": "nova7-fault-classification",
+        "description": "Classify faults by severity tier for routing and alerting",
+        "processors": [
+          {
+            "type": "script",
+            "description": "Assign fault tier based on channel and error type",
+            "source": "def safety_channels = [19, 20]; def critical_channels = [2, 5, 11]; if (ctx.chaos?.channel != null) { def ch = ctx.chaos.channel; if (safety_channels.contains(ch)) { ctx.fault_tier = 'SAFETY_CRITICAL' } else if (critical_channels.contains(ch)) { ctx.fault_tier = 'CRITICAL' } else { ctx.fault_tier = 'STANDARD' } }"
+          }
+        ]
+      }
+    ]
+  },
+  "routing": {
+    "rules": [
+      {
+        "id": "route-errors-to-anomaly-index",
+        "description": "Copy error logs to dedicated anomaly index for faster SE evaluation",
+        "condition": {
+          "field": "log.level",
+          "equals": "ERROR"
+        },
+        "destination": {
+          "data_stream": {
+            "type": "logs",
+            "dataset": "nova7.anomalies",
+            "namespace": "default"
+          }
+        },
+        "copy": true
+      },
+      {
+        "id": "route-safety-critical",
+        "description": "Route safety-critical events (FTS, tracking loss) to priority index",
+        "condition": {
+          "field": "fault_tier",
+          "equals": "SAFETY_CRITICAL"
+        },
+        "destination": {
+          "data_stream": {
+            "type": "logs",
+            "dataset": "nova7.safety",
+            "namespace": "default"
+          }
+        },
+        "copy": true
+      },
+      {
+        "id": "route-cascade-events",
+        "description": "Route cascade warning events for propagation analysis",
+        "condition": {
+          "exists": "cascade.source_channel"
+        },
+        "destination": {
+          "data_stream": {
+            "type": "logs",
+            "dataset": "nova7.cascades",
+            "namespace": "default"
+          }
+        },
+        "copy": true
+      }
+    ]
+  },
+  "retention": {
+    "default_policy": {
+      "max_age": "30d",
+      "max_size": "50gb"
+    },
+    "overrides": [
+      {
+        "data_stream": "logs-nova7.anomalies-default",
+        "max_age": "90d",
+        "max_size": "100gb",
+        "description": "Retain anomaly data longer for post-mission review"
+      },
+      {
+        "data_stream": "logs-nova7.safety-default",
+        "max_age": "365d",
+        "max_size": "50gb",
+        "description": "Safety-critical events retained for 1 year per compliance"
+      }
+    ]
+  },
+  "dashboards": {
+    "default_time_range": "now-30m",
+    "refresh_interval": "5s",
+    "views": [
+      {
+        "id": "nova7-mission-overview",
+        "name": "NOVA-7 Mission Overview",
+        "description": "Real-time mission status with all subsystems, active channels, and phase tracking"
+      },
+      {
+        "id": "nova7-anomaly-tracker",
+        "name": "Anomaly Tracker",
+        "description": "Active anomalies across all 20 channels with cascade visualization"
+      },
+      {
+        "id": "nova7-cross-cloud-health",
+        "name": "Cross-Cloud Health Map",
+        "description": "Service health across AWS, GCP, and Azure with latency heatmap"
+      },
+      {
+        "id": "nova7-safety-dashboard",
+        "name": "Range Safety Dashboard",
+        "description": "FTS status, tracking radar health, and GO/NO-GO board"
+      }
+    ]
+  },
+  "metadata": {
+    "mission_id": "NOVA-7",
+    "version": "1.0.0",
+    "created_by": "nova7-ops-team",
+    "otel_collector_version": "0.96.0",
+    "schema_url": "https://opentelemetry.io/schemas/1.35.0"
+  }
+}

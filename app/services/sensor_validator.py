@@ -1,0 +1,95 @@
+"""Sensor Validator service — Azure eastus. PRIMARY FAULT TARGET.
+
+Validates sensor readings against calibration baselines.
+Has fault injection logic for all 20 channels.
+"""
+
+from __future__ import annotations
+
+import random
+import time
+
+from app.config import CHANNEL_REGISTRY
+from app.services.base_service import BaseService
+
+
+class SensorValidatorService(BaseService):
+    SERVICE_NAME = "sensor-validator"
+
+    VALIDATION_SENSORS = [
+        "thermal", "pressure", "flow_rate", "gps", "imu", "star_tracker",
+        "rf_signal", "packet_integrity", "antenna_position", "vibration",
+        "electrical", "weather", "hydraulic", "pipeline_health",
+        "calibration", "safety_system", "radar_tracking", "network_latency",
+        "data_integrity",
+    ]
+
+    def generate_telemetry(self) -> None:
+        # ── Fault injection — this is the primary fault target ──
+        active_channels = self.get_active_channels_for_service()
+        for ch in active_channels:
+            self.emit_fault_logs(ch)
+            self._emit_validation_failure(ch)
+
+        cascade_channels = self.get_cascade_channels_for_service()
+        for ch in cascade_channels:
+            self.emit_cascade_logs(ch)
+
+        # ── Normal validation passes ───────────────────────────
+        sensors_to_validate = random.sample(
+            self.VALIDATION_SENSORS, k=min(5, len(self.VALIDATION_SENSORS))
+        )
+        for sensor_type in sensors_to_validate:
+            confidence = round(random.uniform(0.95, 1.0), 4)
+            epoch = int(time.time()) - random.randint(0, 3600)
+            self.emit_log(
+                "INFO",
+                f"Validation PASS: {sensor_type} sensor within calibration baseline (confidence {confidence})",
+                {
+                    "validation.result": "PASS",
+                    "validation.sensor_type": sensor_type,
+                    "validation.calibration_epoch": epoch,
+                    "validation.confidence": confidence,
+                    "operation": "sensor_validation",
+                },
+            )
+
+        # ── Metrics ────────────────────────────────────────────
+        validations_per_sec = round(random.uniform(45.0, 65.0), 1)
+        queue_depth = random.randint(0, 20)
+        self.emit_metric("sensor_validator.validations_per_sec", validations_per_sec, "validations/s")
+        self.emit_metric("sensor_validator.queue_depth", float(queue_depth), "items")
+
+        self.emit_log(
+            "INFO",
+            f"Validation pipeline healthy: {validations_per_sec}/s, queue depth {queue_depth}",
+            {
+                "operation": "pipeline_health",
+                "validation.rate": validations_per_sec,
+                "validation.queue_depth": queue_depth,
+            },
+        )
+
+    def _emit_validation_failure(self, channel: int) -> None:
+        """Emit additional validation-specific failure logs when a channel is active."""
+        ch = CHANNEL_REGISTRY.get(channel)
+        if not ch:
+            return
+        confidence = round(random.uniform(0.1, 0.5), 4)
+        epoch = int(time.time()) - random.randint(3600, 86400)
+        self.emit_log(
+            "ERROR",
+            f"Validation FAIL: {ch['sensor_type']} sensor calibration out of bounds — {ch['error_type']}",
+            {
+                "validation.result": "FAIL",
+                "validation.sensor_type": ch["sensor_type"],
+                "validation.calibration_epoch": epoch,
+                "validation.confidence": confidence,
+                "error.type": ch["error_type"],
+                "vehicle_section": ch["vehicle_section"],
+                "chaos.channel": channel,
+                "chaos.fault_type": ch["name"],
+                "operation": "sensor_validation",
+                "system.status": "CRITICAL",
+            },
+        )

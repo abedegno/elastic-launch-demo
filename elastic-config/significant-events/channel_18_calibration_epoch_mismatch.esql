@@ -1,0 +1,4 @@
+FROM logs-generic.otel-default
+| WHERE attributes.error.type == "CalibrationEpochException" AND attributes.sensor.type == "calibration" AND attributes.vehicle_section == "ground_network"
+| STATS error_count = COUNT(*) BY attributes.error.type, attributes.sensor.type, attributes.vehicle_section
+| WHERE error_count > 5

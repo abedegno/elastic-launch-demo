@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOVA-7 Chaos Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/chaos/static/style.css">
+</head>
+<body>
+    <header class="chaos-header">
+        <div class="header-left">
+            <span class="header-prefix">NOVA-7</span>
+            <span class="header-title">CHAOS CONTROLLER</span>
+        </div>
+        <a href="/dashboard" class="nav-link">DASHBOARD</a>
+    </header>
+
+    <div class="main-layout">
+        <!-- Channel Selector -->
+        <section class="selector-panel">
+            <div class="panel-title">SELECT CHANNEL</div>
+            <select id="channel-select" class="channel-dropdown" onchange="selectChannel(this.value)">
+                <option value="">-- Select Fault Channel --</option>
+            </select>
+
+            <div id="channel-info" class="channel-info hidden">
+                <div class="info-row">
+                    <span class="info-label">CHANNEL</span>
+                    <span class="info-value" id="info-channel"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">NAME</span>
+                    <span class="info-value" id="info-name"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">SUBSYSTEM</span>
+                    <span class="info-value" id="info-subsystem"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">SECTION</span>
+                    <span class="info-value" id="info-section"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">ERROR TYPE</span>
+                    <span class="info-value code" id="info-error-type"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">AFFECTED</span>
+                    <span class="info-value" id="info-affected"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">STATUS</span>
+                    <span class="info-value" id="info-status">STANDBY</span>
+                </div>
+                <div class="info-description" id="info-description"></div>
+            </div>
+
+            <!-- Fault Mode -->
+            <div class="mode-selector">
+                <div class="panel-title">FAULT MODE</div>
+                <label class="mode-option">
+                    <input type="radio" name="fault-mode" value="calibration" checked>
+                    <span>Calibration Drift</span>
+                </label>
+                <label class="mode-option">
+                    <input type="radio" name="fault-mode" value="cascade">
+                    <span>Cascading Failure</span>
+                </label>
+                <label class="mode-option">
+                    <input type="radio" name="fault-mode" value="intermittent">
+                    <span>Intermittent</span>
+                </label>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button class="btn-inject" id="btn-inject" onclick="triggerFault()" disabled>
+                    INJECT FAULT
+                </button>
+                <button class="btn-resolve" id="btn-resolve" onclick="resolveFault()" disabled>
+                    RESOLVE
+                </button>
+            </div>
+        </section>
+
+        <!-- Active Channels Panel -->
+        <section class="active-panel">
+            <div class="panel-title">ACTIVE CHANNELS</div>
+            <div id="active-channels" class="active-list">
+                <div class="no-active">No active faults</div>
+            </div>
+        </section>
+    </div>
+
+    <script src="/chaos/static/app.js"></script>
+</body>
+</html>

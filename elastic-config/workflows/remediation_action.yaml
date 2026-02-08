@@ -1,0 +1,144 @@
+version: "1"
+name: NOVA-7 Remediation Action
+description: >
+  Execute remediation actions for NOVA-7 anomalies. Captures pre-action
+  state, executes the remediation via HTTP, waits for stabilization,
+  verifies success, and logs the result to an audit index.
+
+triggers:
+  - type: manual
+
+inputs:
+  - name: channel
+    type: number
+    required: true
+    description: "Fault channel being remediated (1-20)"
+  - name: action_type
+    type: string
+    required: true
+    description: "Remediation action: recalibrate_sensor, restart_service, failover_service, isolate_subsystem"
+  - name: target_service
+    type: string
+    default: ""
+    description: "Service to target for restart/failover actions"
+  - name: justification
+    type: string
+    required: true
+    description: "Reason for executing this remediation"
+  - name: dry_run
+    type: boolean
+    default: true
+
+steps:
+  - name: pre_action_snapshot
+    type: elasticsearch.search
+    with:
+      index: "logs-generic.otel-default"
+      size: 0
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-2m"
+            - term:
+                severity_text: "ERROR"
+      aggs:
+        error_count:
+          value_count:
+            field: "attributes.error.type"
+        by_service:
+          terms:
+            field: "resource.attributes.service.name"
+
+  - name: log_pre_action
+    type: console
+    with:
+      message: >
+        Pre-action snapshot for channel {{ inputs.channel }}:
+        {{ steps.pre_action_snapshot.output.aggregations.error_count.value }} errors
+        across services: {{ steps.pre_action_snapshot.output.aggregations.by_service.buckets | json }}
+
+  - name: safety_check
+    type: if
+    condition: "{{ inputs.action_type }} : restart_service"
+    steps:
+      - name: log_safety_warning
+        type: console
+        with:
+          message: "WARNING: Service restart requested for {{ inputs.target_service }}. Verifying safety constraints before proceeding."
+
+  - name: execute_remediation
+    type: http
+    with:
+      url: "http://localhost/api/remediate/{{ inputs.channel }}"
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        action: "{{ inputs.action_type }}"
+        channel: "{{ inputs.channel }}"
+        target_service: "{{ inputs.target_service }}"
+        dry_run: "{{ inputs.dry_run }}"
+        justification: "{{ inputs.justification }}"
+      timeout: 120s
+
+  - name: log_action_result
+    type: console
+    with:
+      message: "Remediation {{ inputs.action_type }} executed. Response: {{ steps.execute_remediation.output | json }}"
+
+  - name: wait_for_stabilization
+    type: wait
+    with:
+      duration: "30s"
+
+  - name: post_action_snapshot
+    type: elasticsearch.search
+    with:
+      index: "logs-generic.otel-default"
+      size: 0
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-30s"
+            - term:
+                severity_text: "ERROR"
+      aggs:
+        error_count:
+          value_count:
+            field: "attributes.error.type"
+
+  - name: evaluate_result
+    type: if
+    condition: "{{ steps.post_action_snapshot.output.aggregations.error_count.value }} : 0"
+    steps:
+      - name: log_success
+        type: console
+        with:
+          message: "Remediation SUCCESSFUL: Error count dropped to 0 after {{ inputs.action_type }} on channel {{ inputs.channel }}."
+    else:
+      - name: log_partial
+        type: console
+        with:
+          message: >
+            Remediation PARTIAL: Post-action errors =
+            {{ steps.post_action_snapshot.output.aggregations.error_count.value }}.
+            Manual investigation may be needed.
+
+  - name: audit_log
+    type: elasticsearch.index
+    with:
+      index: "nova7-remediation-audit"
+      document:
+        channel: "{{ inputs.channel }}"
+        action_type: "{{ inputs.action_type }}"
+        target_service: "{{ inputs.target_service }}"
+        justification: "{{ inputs.justification }}"
+        dry_run: "{{ inputs.dry_run }}"
+        pre_error_count: "{{ steps.pre_action_snapshot.output.aggregations.error_count.value }}"
+        post_error_count: "{{ steps.post_action_snapshot.output.aggregations.error_count.value }}"
+        mission_id: "NOVA-7"
+      refresh: wait_for

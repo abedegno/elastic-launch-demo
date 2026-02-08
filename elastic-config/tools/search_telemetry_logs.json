@@ -1,0 +1,84 @@
+{
+  "tool_id": "search_telemetry_logs",
+  "name": "Search Telemetry Logs",
+  "description": "Search NOVA-7 telemetry logs in Elasticsearch using flexible query parameters. Use this tool to find specific error events, filter by service, time range, severity, or any combination of telemetry fields. This is your primary investigation tool for root cause analysis.",
+  "type": "elasticsearch",
+  "parameters": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Free-text search query to match against log message bodies. Supports Lucene query syntax."
+      },
+      "error_type": {
+        "type": "string",
+        "description": "Filter by exact error type (e.g., ThermalCalibrationException, GPSMultipathException). Maps to field: error.type"
+      },
+      "sensor_type": {
+        "type": "string",
+        "description": "Filter by sensor type (e.g., thermal, gps, imu, pressure, rf_signal). Maps to field: sensor.type"
+      },
+      "vehicle_section": {
+        "type": "string",
+        "description": "Filter by vehicle section (e.g., engine_bay, avionics, antenna_array, payload_bay, ground_network, launch_pad, fuel_tanks, vehicle_wide). Maps to field: vehicle_section"
+      },
+      "service_name": {
+        "type": "string",
+        "description": "Filter by originating service name (e.g., fuel-system, navigation, comms-array, sensor-validator). Maps to field: service.name"
+      },
+      "severity": {
+        "type": "string",
+        "enum": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"],
+        "description": "Filter by log severity level. Maps to field: log.level"
+      },
+      "channel": {
+        "type": "integer",
+        "description": "Filter by chaos channel number (1-20). Maps to field: chaos.channel"
+      },
+      "cloud_provider": {
+        "type": "string",
+        "enum": ["aws", "gcp", "azure"],
+        "description": "Filter by cloud provider. Maps to field: cloud.provider"
+      },
+      "launch_phase": {
+        "type": "string",
+        "enum": ["PRE-LAUNCH", "COUNTDOWN", "LAUNCH", "ASCENT"],
+        "description": "Filter by mission phase. Maps to field: launch.phase"
+      },
+      "time_range": {
+        "type": "string",
+        "default": "now-15m",
+        "description": "Time range for the search, using Elasticsearch date math (e.g., now-5m, now-1h, now-30s). Defaults to last 15 minutes."
+      },
+      "size": {
+        "type": "integer",
+        "default": 25,
+        "description": "Maximum number of log entries to return. Default 25, max 200."
+      },
+      "sort_order": {
+        "type": "string",
+        "enum": ["desc", "asc"],
+        "default": "desc",
+        "description": "Sort order by timestamp. Default descending (newest first)."
+      }
+    }
+  },
+  "index": "logs-generic-default",
+  "execution": {
+    "type": "elasticsearch_query",
+    "template": {
+      "bool": {
+        "must": [],
+        "filter": [
+          { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
+        ]
+      }
+    }
+  },
+  "metadata": {
+    "mission_id": "NOVA-7",
+    "category": "investigation",
+    "priority": "primary"
+  }
+}

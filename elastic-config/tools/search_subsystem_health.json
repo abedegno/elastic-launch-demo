@@ -1,0 +1,74 @@
+{
+  "tool_id": "search_subsystem_health",
+  "name": "Search Subsystem Health",
+  "description": "Query the health status of NOVA-7 vehicle subsystems by aggregating recent telemetry. Returns error counts, warning counts, and overall health status for each subsystem (propulsion, guidance, communications, payload, relay, ground, validation, safety). Use this tool to get a high-level view of which subsystems are degraded.",
+  "type": "elasticsearch",
+  "parameters": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "subsystem": {
+        "type": "string",
+        "enum": ["propulsion", "guidance", "communications", "payload", "relay", "ground", "validation", "safety"],
+        "description": "Specific subsystem to query. If omitted, returns health for all subsystems."
+      },
+      "vehicle_section": {
+        "type": "string",
+        "description": "Filter by vehicle section (e.g., engine_bay, avionics, antenna_array, payload_bay, ground_network, launch_pad, fuel_tanks, vehicle_wide)."
+      },
+      "time_range": {
+        "type": "string",
+        "default": "now-15m",
+        "description": "Time window for health assessment. Default last 15 minutes."
+      },
+      "include_warnings": {
+        "type": "boolean",
+        "default": true,
+        "description": "Include WARNING-level events in the health assessment."
+      }
+    }
+  },
+  "index": "logs-generic-default",
+  "execution": {
+    "type": "elasticsearch_query",
+    "template": {
+      "size": 0,
+      "query": {
+        "bool": {
+          "filter": [
+            { "range": { "@timestamp": { "gte": "{{time_range}}" } } },
+            { "terms": { "log.level": ["ERROR", "WARN"] } }
+          ]
+        }
+      },
+      "aggs": {
+        "by_subsystem": {
+          "terms": { "field": "system.subsystem", "size": 10 },
+          "aggs": {
+            "by_severity": {
+              "terms": { "field": "log.level" }
+            },
+            "by_error_type": {
+              "terms": { "field": "error.type", "size": 25 }
+            },
+            "by_vehicle_section": {
+              "terms": { "field": "vehicle_section", "size": 15 }
+            },
+            "latest_event": {
+              "top_hits": {
+                "size": 1,
+                "sort": [{ "@timestamp": "desc" }],
+                "_source": ["message", "@timestamp", "error.type", "system.status"]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "metadata": {
+    "mission_id": "NOVA-7",
+    "category": "health-monitoring",
+    "priority": "primary"
+  }
+}

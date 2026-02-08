@@ -1,0 +1,93 @@
+{
+  "tool_id": "check_service_status",
+  "name": "Check Service Status",
+  "description": "Check the operational status of individual NOVA-7 microservices. Returns the current status (NOMINAL, WARNING, CRITICAL), active fault channels, cloud deployment info, and recent telemetry summary for a specific service or all services. Use this to determine which services are directly affected vs experiencing cascade effects.",
+  "type": "elasticsearch",
+  "parameters": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "service_name": {
+        "type": "string",
+        "enum": [
+          "mission-control",
+          "fuel-system",
+          "ground-systems",
+          "navigation",
+          "comms-array",
+          "payload-monitor",
+          "sensor-validator",
+          "telemetry-relay",
+          "range-safety"
+        ],
+        "description": "Specific service to check. If omitted, returns status for all 9 services."
+      },
+      "cloud_provider": {
+        "type": "string",
+        "enum": ["aws", "gcp", "azure"],
+        "description": "Filter services by cloud provider."
+      },
+      "include_metrics": {
+        "type": "boolean",
+        "default": false,
+        "description": "Include recent metric values (latency, error rates) in the response."
+      },
+      "time_range": {
+        "type": "string",
+        "default": "now-5m",
+        "description": "Time range for recent telemetry summary. Default last 5 minutes."
+      }
+    }
+  },
+  "index": "logs-generic-default",
+  "execution": {
+    "type": "elasticsearch_query",
+    "template": {
+      "size": 0,
+      "query": {
+        "bool": {
+          "filter": [
+            { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
+          ]
+        }
+      },
+      "aggs": {
+        "by_service": {
+          "terms": { "field": "service.name", "size": 10 },
+          "aggs": {
+            "status": {
+              "terms": { "field": "system.status" }
+            },
+            "error_count": {
+              "filter": { "term": { "log.level": "ERROR" } }
+            },
+            "warn_count": {
+              "filter": { "term": { "log.level": "WARN" } }
+            },
+            "active_channels": {
+              "terms": { "field": "chaos.channel", "size": 20 }
+            },
+            "cloud_info": {
+              "top_hits": {
+                "size": 1,
+                "_source": ["cloud.provider", "cloud.region", "cloud.availability_zone", "cloud.platform"]
+              }
+            },
+            "latest_event": {
+              "top_hits": {
+                "size": 3,
+                "sort": [{ "@timestamp": "desc" }],
+                "_source": ["message", "@timestamp", "log.level", "error.type"]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "metadata": {
+    "mission_id": "NOVA-7",
+    "category": "service-health",
+    "priority": "primary"
+  }
+}

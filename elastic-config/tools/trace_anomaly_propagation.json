@@ -1,0 +1,114 @@
+{
+  "tool_id": "trace_anomaly_propagation",
+  "name": "Trace Anomaly Propagation",
+  "description": "Trace the propagation path of an anomaly across NOVA-7 services and cloud boundaries. Given a source channel or error type, this tool identifies the cascade chain: which services were directly affected, which experienced secondary cascade effects, and the temporal order of fault propagation. Essential for understanding cross-cloud failure modes in the multi-cloud architecture (AWS <-> GCP <-> Azure).",
+  "type": "elasticsearch",
+  "parameters": {
+    "type": "object",
+    "required": ["source_channel"],
+    "properties": {
+      "source_channel": {
+        "type": "integer",
+        "description": "The originating chaos channel number (1-20) to trace propagation from."
+      },
+      "time_range": {
+        "type": "string",
+        "default": "now-15m",
+        "description": "Time window to analyze for propagation. Default last 15 minutes."
+      },
+      "include_cascade": {
+        "type": "boolean",
+        "default": true,
+        "description": "Include cascade (secondary) effects in the trace."
+      },
+      "include_traces": {
+        "type": "boolean",
+        "default": true,
+        "description": "Include distributed trace spans in the propagation analysis."
+      }
+    }
+  },
+  "indices": ["logs-generic-default", "traces-generic-default"],
+  "execution": {
+    "type": "multi_search",
+    "queries": [
+      {
+        "description": "Find direct fault events for the source channel",
+        "index": "logs-generic-default",
+        "template": {
+          "size": 50,
+          "query": {
+            "bool": {
+              "must": [
+                { "term": { "chaos.channel": "{{source_channel}}" } },
+                { "term": { "log.level": "ERROR" } }
+              ],
+              "filter": [
+                { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
+              ]
+            }
+          },
+          "sort": [{ "@timestamp": "asc" }]
+        }
+      },
+      {
+        "description": "Find cascade events triggered by this channel",
+        "index": "logs-generic-default",
+        "template": {
+          "size": 50,
+          "query": {
+            "bool": {
+              "must": [
+                { "term": { "cascade.source_channel": "{{source_channel}}" } }
+              ],
+              "filter": [
+                { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
+              ]
+            }
+          },
+          "sort": [{ "@timestamp": "asc" }]
+        }
+      },
+      {
+        "description": "Aggregate propagation timeline by service",
+        "index": "logs-generic-default",
+        "template": {
+          "size": 0,
+          "query": {
+            "bool": {
+              "should": [
+                { "term": { "chaos.channel": "{{source_channel}}" } },
+                { "term": { "cascade.source_channel": "{{source_channel}}" } }
+              ],
+              "minimum_should_match": 1,
+              "filter": [
+                { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
+              ]
+            }
+          },
+          "aggs": {
+            "propagation_timeline": {
+              "date_histogram": {
+                "field": "@timestamp",
+                "fixed_interval": "10s"
+              },
+              "aggs": {
+                "by_service": {
+                  "terms": { "field": "service.name" }
+                },
+                "by_cloud": {
+                  "terms": { "field": "cloud.provider" }
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "metadata": {
+    "mission_id": "NOVA-7",
+    "category": "investigation",
+    "priority": "primary"
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "tool_id": "remediation_action",
+  "name": "Remediation Action",
+  "description": "Execute or recommend a remediation action for a detected NOVA-7 anomaly. This tool can trigger automated remediation workflows (sensor recalibration, service restart, failover) or generate a structured remediation plan for manual execution by the launch operations team. All actions are logged for audit trail compliance.",
+  "type": "workflow",
+  "parameters": {
+    "type": "object",
+    "required": ["channel", "action_type"],
+    "properties": {
+      "channel": {
+        "type": "integer",
+        "description": "The fault channel number (1-20) that this remediation addresses."
+      },
+      "action_type": {
+        "type": "string",
+        "enum": [
+          "recommend",
+          "recalibrate_sensor",
+          "restart_service",
+          "failover_service",
+          "isolate_subsystem",
+          "escalate_to_operator",
+          "request_hold",
+          "resume_countdown"
+        ],
+        "description": "Type of remediation action. 'recommend' generates a plan without executing. Other actions trigger automated workflows."
+      },
+      "target_service": {
+        "type": "string",
+        "enum": [
+          "mission-control",
+          "fuel-system",
+          "ground-systems",
+          "navigation",
+          "comms-array",
+          "payload-monitor",
+          "sensor-validator",
+          "telemetry-relay",
+          "range-safety"
+        ],
+        "description": "The service to apply the remediation to. Required for restart_service and failover_service actions."
+      },
+      "target_subsystem": {
+        "type": "string",
+        "enum": ["propulsion", "guidance", "communications", "payload", "relay", "ground", "validation", "safety"],
+        "description": "The subsystem to apply the remediation to. Required for isolate_subsystem action."
+      },
+      "severity_override": {
+        "type": "string",
+        "enum": ["ADVISORY", "CAUTION", "WARNING", "CRITICAL"],
+        "description": "Override the severity classification for the remediation. Used when the agent determines a different severity than the default."
+      },
+      "justification": {
+        "type": "string",
+        "description": "Free-text justification for the remediation action. Required for escalate_to_operator and request_hold actions."
+      },
+      "dry_run": {
+        "type": "boolean",
+        "default": false,
+        "description": "If true, simulate the action without executing it. Returns what would happen."
+      }
+    }
+  },
+  "execution": {
+    "type": "workflow",
+    "workflow_map": {
+      "recommend": "significant_event_notification",
+      "recalibrate_sensor": "remediation_action",
+      "restart_service": "remediation_action",
+      "failover_service": "remediation_action",
+      "isolate_subsystem": "remediation_action",
+      "escalate_to_operator": "escalation_hold",
+      "request_hold": "escalation_hold",
+      "resume_countdown": "remediation_action"
+    },
+    "audit": {
+      "enabled": true,
+      "index": "nova7-remediation-audit",
+      "fields": ["channel", "action_type", "target_service", "justification", "timestamp", "agent_id"]
+    }
+  },
+  "guardrails": {
+    "require_justification": ["escalate_to_operator", "request_hold", "resume_countdown"],
+    "require_confirmation": ["isolate_subsystem", "request_hold"],
+    "blocked_during_launch": ["restart_service", "failover_service"],
+    "safety_critical_channels": [19, 20],
+    "max_actions_per_minute": 10
+  },
+  "metadata": {
+    "mission_id": "NOVA-7",
+    "category": "remediation",
+    "priority": "critical"
+  }
+}

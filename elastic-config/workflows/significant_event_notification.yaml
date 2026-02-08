@@ -1,0 +1,130 @@
+version: "1"
+name: NOVA-7 Significant Event Notification
+description: >
+  Notify launch operations team when a significant event is detected.
+  Searches recent OTLP logs for anomalies, invokes the AI agent for
+  root cause analysis, and logs the event to an audit index.
+
+triggers:
+  - type: manual
+
+inputs:
+  - name: channel
+    type: number
+    required: true
+    description: "Fault channel number (1-20)"
+  - name: error_type
+    type: string
+    required: true
+    description: "Error type from the significant event"
+  - name: subsystem
+    type: string
+    required: true
+    description: "Affected subsystem name"
+  - name: severity
+    type: string
+    default: "medium"
+    description: "Severity level (critical, high, medium)"
+
+steps:
+  - name: classify_severity
+    type: if
+    condition: "{{ inputs.severity }} : critical"
+    steps:
+      - name: set_critical
+        type: data.set
+        with:
+          var:
+            - notification_level: "critical"
+            - color: "#FF0000"
+            - escalation_required: "true"
+    else:
+      - name: set_default
+        type: data.set
+        with:
+          var:
+            - notification_level: "{{ inputs.severity }}"
+            - color: "#FFD700"
+            - escalation_required: "false"
+
+  - name: enrich_context
+    type: elasticsearch.search
+    with:
+      index: "logs-generic.otel-default"
+      size: 5
+      query:
+        bool:
+          must:
+            - term:
+                attributes.error.type: "{{ inputs.error_type }}"
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-5m"
+
+  - name: check_cascade
+    type: elasticsearch.search
+    with:
+      index: "logs-generic.otel-default"
+      size: 0
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-5m"
+            - term:
+                severity_text: "ERROR"
+      aggs:
+        affected_services:
+          terms:
+            field: "resource.attributes.service.name"
+
+  - name: log_notification
+    type: console
+    with:
+      message: >
+        NOVA-7 Significant Event - Channel {{ inputs.channel }}:
+        {{ inputs.error_type }} in {{ inputs.subsystem }}.
+        Severity: {{ inputs.severity }}.
+        Recent matches: {{ steps.enrich_context.output.hits.total.value }}.
+        Affected services: {{ steps.check_cascade.output.aggregations.affected_services.buckets | json }}.
+
+  - name: invoke_agent
+    type: ai.agent
+    with:
+      agent_id: nova7-launch-anomaly-analyst
+      message: >
+        A significant event has been detected on Channel {{ inputs.channel }}
+        ({{ inputs.error_type }}). The {{ inputs.subsystem }} subsystem is
+        reporting anomalies. Perform root cause analysis. If you identify
+        the root cause with HIGH confidence, execute automated remediation
+        using the remediation_action tool with the appropriate action_type
+        and justification.
+
+  - name: log_rca_result
+    type: console
+    with:
+      message: "AI RCA Result: {{ steps.invoke_agent.output | json }}"
+
+  - name: check_escalation
+    type: if
+    condition: "{{ steps.classify_severity.output.escalation_required }} : true"
+    steps:
+      - name: escalation_notice
+        type: console
+        with:
+          message: "ESCALATION REQUIRED: Channel {{ inputs.channel }} - {{ inputs.error_type }} at CRITICAL severity. Paging launch director."
+
+  - name: audit_log
+    type: elasticsearch.index
+    with:
+      index: "nova7-significant-events-audit"
+      document:
+        channel: "{{ inputs.channel }}"
+        error_type: "{{ inputs.error_type }}"
+        subsystem: "{{ inputs.subsystem }}"
+        severity: "{{ inputs.severity }}"
+        cascade_services: "{{ steps.check_cascade.output.aggregations.affected_services.buckets | json }}"
+        mission_id: "NOVA-7"
+      refresh: wait_for

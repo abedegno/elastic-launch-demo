@@ -1,0 +1,4 @@
+FROM logs-generic.otel-default
+| WHERE attributes.error.type == "AntennaPointingException" AND attributes.sensor.type == "antenna_position" AND attributes.vehicle_section == "antenna_array"
+| STATS error_count = COUNT(*) BY attributes.error.type, attributes.sensor.type, attributes.vehicle_section
+| WHERE error_count > 5

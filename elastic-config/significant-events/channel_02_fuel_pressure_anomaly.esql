@@ -1,0 +1,4 @@
+FROM logs-generic.otel-default
+| WHERE attributes.error.type == "FuelPressureException" AND attributes.sensor.type == "pressure" AND attributes.vehicle_section == "fuel_tanks"
+| STATS error_count = COUNT(*) BY attributes.error.type, attributes.sensor.type, attributes.vehicle_section
+| WHERE error_count > 5

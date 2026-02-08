@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOVA-7 Mission Control</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/dashboard/static/style.css">
+</head>
+<body>
+    <div class="scanline"></div>
+
+    <!-- Mission Header -->
+    <header class="mission-header">
+        <div class="mission-badge">
+            <span class="mission-prefix">MISSION</span>
+            <span class="mission-id">NOVA-7</span>
+        </div>
+        <div class="mission-title">ORBITAL INSERTION</div>
+        <div class="mission-status" id="mission-status">
+            <span class="status-dot nominal"></span>
+            <span id="overall-status">ALL SYSTEMS NOMINAL</span>
+        </div>
+    </header>
+
+    <!-- Countdown Clock -->
+    <section class="countdown-section">
+        <div class="countdown-label">LAUNCH COUNTDOWN</div>
+        <div class="countdown-clock" id="countdown-clock">T-10:00</div>
+        <div class="countdown-controls">
+            <button class="ctrl-btn" onclick="countdownAction('start')">START</button>
+            <button class="ctrl-btn" onclick="countdownAction('pause')">HOLD</button>
+            <button class="ctrl-btn" onclick="countdownAction('reset')">RESET</button>
+            <select class="ctrl-select" onchange="setSpeed(this.value)">
+                <option value="1">1x</option>
+                <option value="2">2x</option>
+                <option value="5">5x</option>
+                <option value="10">10x</option>
+                <option value="30">30x</option>
+            </select>
+        </div>
+    </section>
+
+    <!-- Subsystem Status Grid -->
+    <section class="subsystem-grid">
+        <div class="cloud-column">
+            <div class="cloud-label aws">AWS <span class="cloud-region">us-east-1</span></div>
+            <div class="service-card" id="svc-mission-control" data-service="mission-control">
+                <div class="svc-name">MISSION CONTROL</div>
+                <div class="svc-subsystem">Command</div>
+                <div class="svc-status nominal">NOMINAL</div>
+                <div class="svc-indicator"></div>
+            </div>
+            <div class="service-card" id="svc-fuel-system" data-service="fuel-system">
+                <div class="svc-name">FUEL SYSTEM</div>
+                <div class="svc-subsystem">Propulsion</div>
+                <div class="svc-status nominal">NOMINAL</div>
+                <div class="svc-indicator"></div>
+            </div>
+            <div class="service-card" id="svc-ground-systems" data-service="ground-systems">
+                <div class="svc-name">GROUND SYSTEMS</div>
+                <div class="svc-subsystem">Ground</div>
+                <div class="svc-status nominal">NOMINAL</div>
+                <div class="svc-indicator"></div>
+            </div>
+        </div>
+        <div class="cloud-column">
+            <div class="cloud-label gcp">GCP <span class="cloud-region">us-central1</span></div>
+            <div class="service-card" id="svc-navigation" data-service="navigation">
+                <div class="svc-name">NAVIGATION</div>
+                <div class="svc-subsystem">Guidance</div>
+                <div class="svc-status nominal">NOMINAL</div>
+                <div class="svc-indicator"></div>
+            </div>
+            <div class="service-card" id="svc-comms-array" data-service="comms-array">
+                <div class="svc-name">COMMS ARRAY</div>
+                <div class="svc-subsystem">Communications</div>
+                <div class="svc-status nominal">NOMINAL</div>
+                <div class="svc-indicator"></div>
+            </div>
+            <div class="service-card" id="svc-payload-monitor" data-service="payload-monitor">
+                <div class="svc-name">PAYLOAD MONITOR</div>
+                <div class="svc-subsystem">Payload</div>
+                <div class="svc-status nominal">NOMINAL</div>
+                <div class="svc-indicator"></div>
+            </div>
+        </div>
+        <div class="cloud-column">
+            <div class="cloud-label azure">Azure <span class="cloud-region">eastus</span></div>
+            <div class="service-card" id="svc-sensor-validator" data-service="sensor-validator">
+                <div class="svc-name">SENSOR VALIDATOR</div>
+                <div class="svc-subsystem">Validation</div>
+                <div class="svc-status nominal">NOMINAL</div>
+                <div class="svc-indicator"></div>
+            </div>
+            <div class="service-card" id="svc-telemetry-relay" data-service="telemetry-relay">
+                <div class="svc-name">TELEMETRY RELAY</div>
+                <div class="svc-subsystem">Relay</div>
+                <div class="svc-status nominal">NOMINAL</div>
+                <div class="svc-indicator"></div>
+            </div>
+            <div class="service-card" id="svc-range-safety" data-service="range-safety">
+                <div class="svc-name">RANGE SAFETY</div>
+                <div class="svc-subsystem">Safety</div>
+                <div class="svc-status nominal">NOMINAL</div>
+                <div class="svc-indicator"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Event Feed -->
+    <section class="event-feed">
+        <div class="feed-header">EVENT LOG</div>
+        <div class="feed-container" id="event-feed"></div>
+    </section>
+
+    <script src="/dashboard/static/app.js"></script>
+</body>
+</html>

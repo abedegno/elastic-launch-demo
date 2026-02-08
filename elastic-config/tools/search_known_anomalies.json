@@ -1,0 +1,62 @@
+{
+  "tool_id": "search_known_anomalies",
+  "name": "Search Known Anomalies",
+  "description": "Search the NOVA-7 knowledge base for previously documented anomalies, failure patterns, and resolution procedures. Use this tool to match current anomalies against known patterns and retrieve historical remediation steps. The knowledge base contains detailed technical documentation for thermal calibration, GPS multipath, IMU synchronization, cross-cloud relay, and payload thermal anomalies.",
+  "type": "elasticsearch",
+  "parameters": {
+    "type": "object",
+    "required": ["query"],
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query describing the anomaly or symptom (e.g., 'thermal calibration drift engine bay', 'GPS multipath signal interference', 'IMU clock synchronization'). Supports natural language."
+      },
+      "error_type": {
+        "type": "string",
+        "description": "Exact error type to search for (e.g., ThermalCalibrationException). Provides more precise matching."
+      },
+      "subsystem": {
+        "type": "string",
+        "enum": ["propulsion", "guidance", "communications", "payload", "relay", "ground", "validation", "safety"],
+        "description": "Filter knowledge base results by subsystem."
+      },
+      "category": {
+        "type": "string",
+        "default": "launch-anomaly",
+        "description": "Category of knowledge base documents to search."
+      },
+      "size": {
+        "type": "integer",
+        "default": 5,
+        "description": "Maximum number of knowledge base documents to return."
+      }
+    }
+  },
+  "index": "nova7-knowledge-base",
+  "execution": {
+    "type": "elasticsearch_query",
+    "template": {
+      "query": {
+        "bool": {
+          "should": [
+            {
+              "multi_match": {
+                "query": "{{query}}",
+                "fields": ["title^3", "content", "tags^2"],
+                "type": "best_fields"
+              }
+            }
+          ],
+          "filter": [
+            { "term": { "mission_id": "NOVA-7" } }
+          ]
+        }
+      }
+    }
+  },
+  "metadata": {
+    "mission_id": "NOVA-7",
+    "category": "knowledge-base",
+    "priority": "secondary"
+  }
+}

@@ -1,0 +1,4 @@
+FROM logs-generic.otel-default
+| WHERE attributes.error.type == "HydraulicPressureException" AND attributes.sensor.type == "hydraulic" AND attributes.vehicle_section == "launch_pad"
+| STATS error_count = COUNT(*) BY attributes.error.type, attributes.sensor.type, attributes.vehicle_section
+| WHERE error_count > 5

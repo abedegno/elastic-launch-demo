@@ -1,0 +1,142 @@
+{
+  "tool_id": "launch_safety_assessment",
+  "name": "Launch Safety Assessment",
+  "description": "Perform a comprehensive safety assessment for the NOVA-7 launch. Evaluates all critical subsystems against launch commit criteria, checks for active Flight Termination System (FTS) anomalies, verifies range safety radar tracking, and produces a GO/NO-GO recommendation. Use this tool when multiple anomalies are detected or before recommending a launch phase transition.",
+  "type": "elasticsearch",
+  "parameters": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "assessment_type": {
+        "type": "string",
+        "enum": ["full", "subsystem", "fts_only", "range_safety"],
+        "default": "full",
+        "description": "Type of safety assessment. 'full' checks all subsystems, 'subsystem' checks a specific one, 'fts_only' checks Flight Termination System, 'range_safety' checks range tracking."
+      },
+      "subsystem": {
+        "type": "string",
+        "enum": ["propulsion", "guidance", "communications", "payload", "relay", "ground", "validation", "safety"],
+        "description": "Specific subsystem to assess (required when assessment_type is 'subsystem')."
+      },
+      "time_range": {
+        "type": "string",
+        "default": "now-10m",
+        "description": "Time window for the assessment. Default last 10 minutes."
+      },
+      "strict_mode": {
+        "type": "boolean",
+        "default": true,
+        "description": "In strict mode, any active ERROR in a safety-critical subsystem results in NO-GO. Default true."
+      }
+    }
+  },
+  "indices": ["logs-generic-default", "metrics-generic-default"],
+  "execution": {
+    "type": "multi_search",
+    "queries": [
+      {
+        "description": "Count active errors by subsystem",
+        "index": "logs-generic-default",
+        "template": {
+          "size": 0,
+          "query": {
+            "bool": {
+              "must": [
+                { "term": { "log.level": "ERROR" } }
+              ],
+              "filter": [
+                { "range": { "@timestamp": { "gte": "{{time_range}}" } } },
+                { "term": { "launch.mission_id": "NOVA-7" } }
+              ]
+            }
+          },
+          "aggs": {
+            "by_subsystem": {
+              "terms": { "field": "system.subsystem", "size": 10 },
+              "aggs": {
+                "error_types": {
+                  "terms": { "field": "error.type", "size": 25 }
+                },
+                "by_service": {
+                  "terms": { "field": "service.name" }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "description": "Check for FTS anomalies specifically",
+        "index": "logs-generic-default",
+        "template": {
+          "size": 10,
+          "query": {
+            "bool": {
+              "must": [
+                { "term": { "error.type": "FTSCheckException" } }
+              ],
+              "filter": [
+                { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
+              ]
+            }
+          },
+          "sort": [{ "@timestamp": "desc" }]
+        }
+      },
+      {
+        "description": "Check for range safety tracking losses",
+        "index": "logs-generic-default",
+        "template": {
+          "size": 10,
+          "query": {
+            "bool": {
+              "must": [
+                { "term": { "error.type": "TrackingLossException" } }
+              ],
+              "filter": [
+                { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
+              ]
+            }
+          },
+          "sort": [{ "@timestamp": "desc" }]
+        }
+      },
+      {
+        "description": "Check active cascade warnings",
+        "index": "logs-generic-default",
+        "template": {
+          "size": 0,
+          "query": {
+            "bool": {
+              "must": [
+                { "exists": { "field": "cascade.source_channel" } }
+              ],
+              "filter": [
+                { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
+              ]
+            }
+          },
+          "aggs": {
+            "cascade_sources": {
+              "terms": { "field": "cascade.source_channel", "size": 20 }
+            }
+          }
+        }
+      }
+    ],
+    "post_processing": {
+      "go_nogo_rules": [
+        { "condition": "fts_errors > 0", "result": "NO-GO", "reason": "Active Flight Termination System anomaly" },
+        { "condition": "tracking_losses > 0", "result": "NO-GO", "reason": "Range safety tracking loss detected" },
+        { "condition": "propulsion_errors > 0 AND strict_mode", "result": "NO-GO", "reason": "Active propulsion subsystem fault" },
+        { "condition": "guidance_errors > 0 AND strict_mode", "result": "NO-GO", "reason": "Active guidance subsystem fault" },
+        { "condition": "cascade_count > 3", "result": "HOLD", "reason": "Multiple cascading failures detected" }
+      ]
+    }
+  },
+  "metadata": {
+    "mission_id": "NOVA-7",
+    "category": "safety",
+    "priority": "critical"
+  }
+}
