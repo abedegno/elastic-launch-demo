@@ -12,7 +12,7 @@ import json
 import os
 import uuid
 
-DATA_VIEW_ID = "logs-*"
+DATA_VIEW_ID = "logs*"
 DASHBOARD_ID = "nova7-exec-dashboard"
 
 
@@ -204,14 +204,14 @@ panels.append(make_panel("p3",
 # ── p4: Active Anomalies (lnsMetric) ────────────────────────────────────────
 lid = uid()
 cid = uid()
-columns = {cid: col_unique_count(cid, "attributes.chaos.channel", label="Active Anomalies")}
+columns = {cid: col_count(cid, label="Active Anomalies", kql_filter="severity_text: ERROR")}
 layer = make_layer(lid, [cid], columns)
 state = make_state(layer, {
     "layerId": lid,
     "layerType": "data",
     "metricAccessor": cid,
     "color": "#DA8B45",
-    "subtitle": "Distinct fault channels",
+    "subtitle": "ERROR-level events",
 })
 panels.append(make_panel("p4",
     {"h": 6, "i": "p4", "w": 12, "x": 36, "y": 0},
@@ -247,7 +247,7 @@ lid = uid()
 cid_x = uid()
 cid_y = uid()
 columns = {
-    cid_x: col_terms(cid_x, "attributes.system.subsystem", "Subsystem", size=10, order_col_id=cid_y),
+    cid_x: col_terms(cid_x, "resource.attributes.service.name", "Service", size=10, order_col_id=cid_y),
     cid_y: col_count(cid_y, label="Error Count", kql_filter="severity_text: ERROR"),
 }
 layer = make_layer(lid, [cid_x, cid_y], columns)
@@ -265,14 +265,14 @@ state = make_state(layer, {
 })
 panels.append(make_panel("p6",
     {"h": 12, "i": "p6", "w": 24, "x": 24, "y": 6},
-    "Errors by Subsystem", "lnsXY", state, [make_ref(lid)]))
+    "Errors by Service", "lnsXY", state, [make_ref(lid)]))
 
 # ── p7: Cloud Provider Distribution (lnsPie) ───────────────────────────────
 lid = uid()
 cid_group = uid()
 cid_metric = uid()
 columns = {
-    cid_group: col_terms(cid_group, "resource.attributes.cloud.provider", "Cloud Provider", size=5, order_col_id=cid_metric),
+    cid_group: col_terms(cid_group, "severity_text", "Severity", size=5, order_col_id=cid_metric),
     cid_metric: col_count(cid_metric, label="Count"),
 }
 layer = make_layer(lid, [cid_group, cid_metric], columns)
@@ -287,15 +287,15 @@ state = make_state(layer, {
 })
 panels.append(make_panel("p7",
     {"h": 12, "i": "p7", "w": 24, "x": 0, "y": 18},
-    "Cloud Provider Distribution", "lnsPie", state, [make_ref(lid)]))
+    "Severity Distribution", "lnsPie", state, [make_ref(lid)]))
 
 # ── p8: Top 10 Error Types (lnsDatatable) ──────────────────────────────────
 lid = uid()
 cid_terms = uid()
 cid_count = uid()
 columns = {
-    cid_terms: col_terms(cid_terms, "attributes.error.type", "Error Type", size=10, order_col_id=cid_count),
-    cid_count: col_count(cid_count, label="Count"),
+    cid_terms: col_terms(cid_terms, "resource.attributes.service.name", "Service", size=10, order_col_id=cid_count),
+    cid_count: col_count(cid_count, label="Error Count", kql_filter="severity_text: ERROR"),
 }
 layer = make_layer(lid, [cid_terms, cid_count], columns)
 state = make_state(layer, {
@@ -310,7 +310,7 @@ state = make_state(layer, {
 })
 panels.append(make_panel("p8",
     {"h": 12, "i": "p8", "w": 24, "x": 24, "y": 18},
-    "Top 10 Error Types", "lnsDatatable", state, [make_ref(lid)]))
+    "Top Services by Error Count", "lnsDatatable", state, [make_ref(lid)]))
 
 # ── p9: Service Health Matrix (lnsHeatmap) ──────────────────────────────────
 lid = uid()

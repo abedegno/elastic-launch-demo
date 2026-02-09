@@ -1,4 +1,4 @@
-FROM logs-generic.otel-default
-| WHERE attributes.error.type == "ThermalCalibrationException" AND attributes.sensor.type == "thermal" AND attributes.vehicle_section == "engine_bay"
-| STATS error_count = COUNT(*) BY attributes.error.type, attributes.sensor.type, attributes.vehicle_section
+FROM logs
+| WHERE body.text LIKE "*ThermalCalibrationException*" AND severity_text == "ERROR"
+| STATS error_count = COUNT(*)
 | WHERE error_count > 5

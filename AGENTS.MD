@@ -275,11 +275,30 @@ inputs:
 | `foreach` | Loop | `foreach` (expr), `steps` |
 | `data.set` | Set variables | `var` (array of key-value pairs) |
 | `wait` | Delay | `duration` (e.g. "30s") |
-| `ai.agent` | AI agent call | `agent_id`, `message` |
+| `ai.agent` | AI agent call | `message` + `agent-id` (step-level) |
 | `ai.prompt` | AI prompt | `prompt`, `schema` + `connector-id` |
 | `slack` | Slack message | `message` + `connector-id` |
 | `jira` | Jira ticket | `projectKey`, `summary` + `connector-id` |
 | `kibana.request` | Kibana API | `method`, `path`, `body` |
+
+**CRITICAL: `ai.agent` agent-id placement.** The `agent-id` for `ai.agent` steps MUST be
+at the **step level** (like `connector-id`), NOT inside `with`. If placed inside `with`,
+the workflow engine silently strips it and the agent step may fail or use a wrong default agent.
+```yaml
+# CORRECT — agent-id at step level
+- name: invoke_agent
+  type: ai.agent
+  agent-id: nova7-launch-anomaly-analyst
+  with:
+    message: "Perform root cause analysis..."
+
+# WRONG — agent_id inside with (silently stripped!)
+- name: invoke_agent
+  type: ai.agent
+  with:
+    agent_id: nova7-launch-anomaly-analyst   # ← STRIPPED BY ENGINE
+    message: "..."
+```
 
 **NOT valid step types:** `condition`, `branch`, `elasticsearch_query`, `webhook`,
 `index` (use `elasticsearch.index`), `script`, `connector`, `agent` (use `ai.agent`),
@@ -292,6 +311,7 @@ inputs:
   with:                    # Parameters (NOT "params")
     key: value
   connector-id: "..."      # For connector steps (slack, jira, ai.prompt)
+  agent-id: "..."          # For ai.agent steps — MUST be at step level
   condition: "expr"        # Conditional execution
   on-failure:              # Error handling
     retry:
@@ -413,8 +433,7 @@ attributes.error.type: "ThermalCalibrationException" AND attributes.sensor.type:
 
 ### Stream Name Discovery
 - `GET /api/streams` returns available streams
-- For OTLP logs, the stream name is typically `logs-generic.otel-default`
-- Fall back to `logs` (the wired root stream) if the specific data stream isn't listed
+- For OTLP logs, the stream name is `logs`
 - Stream must contain data for queries to match
 
 ### Verification
@@ -549,6 +568,34 @@ When OTLP data is ingested by Elastic, field paths differ from what you set in c
 | Log body | `body` | NOT `message` |
 | Data stream dataset | `data_stream.dataset` includes `.otel` | e.g., `nginx.access.otel` not `nginx.access` |
 
+### CRITICAL: Passthrough Mapping on `logs` Stream
+
+The `attributes` field on the `logs` data stream uses **passthrough** mapping type.
+This means individual attribute keys (e.g., `attributes.error.type`, `attributes.chaos.channel`)
+are stored in `_source` but are **NOT indexed** — they cannot be searched, filtered, or
+aggregated with term/match/range queries or ES|QL WHERE clauses.
+
+**Indexed (queryable) fields on `logs`:**
+| Field | Type | Values |
+|-------|------|--------|
+| `body.text` | text | Log message body — error type names appear here |
+| `severity_text` | keyword | `INFO`, `WARN`, `ERROR` |
+| `log.level` | keyword | Same as `severity_text` |
+| `service.name` | keyword | 9 services (e.g., `fuel-system`, `navigation`) |
+| `resource.attributes.service.name` | keyword | Same as `service.name` |
+| `@timestamp` | date | Event timestamp |
+
+**NOT indexed (source-only) fields:** `attributes.*`, `resource.attributes.cloud.*`,
+`resource.attributes.host.*` (except `host.name`).
+
+**Consequence:** All queries (KQL, ES query DSL, ES|QL) that need to filter by error type
+must use `body.text` instead of `attributes.error.type`. Examples:
+- **KQL:** `body.text: "FuelPressureException" AND severity_text: "ERROR"`
+- **ES query DSL:** `{"match_phrase": {"body.text": "FuelPressureException"}}`
+- **ES|QL:** `WHERE body.text LIKE "*FuelPressureException*" AND severity_text == "ERROR"`
+
+This affects: significant event queries, alert rules, workflow ES search steps, and agent tools.
+
 ### Required Host Metric Resource Attributes
 These must be set for OTel dashboards to fully work:
 ```
@@ -635,3 +682,9 @@ POST /api/actions/connector
 9. **Lens format is fragile** — Missing a single field like `incompleteColumns: {}` causes cryptic JS errors; always use a generator script or export a working panel as reference
 10. **Kibana API from shell** — The `source .env && curl` pattern often fails to load vars when piped; use `export $(grep -E '^[A-Za-z_]' .env | xargs)` or hardcode the URL. Also prefer writing curl output to a temp file, then parsing with a separate Python script, rather than piping inline — multiline heredoc Python inside `$()` is fragile with escaping
 11. **Data views must exist before dashboard import** — If a Lens panel references data view ID `logs-*`, that data view must exist in Kibana. Create it via `POST /api/data_views/data_view` before importing the dashboard. After import, users may need to refresh the browser for Kibana to pick up new data view fields
+12. **`ai.agent` context window overflow** — The workflow engine passes ALL accumulated step outputs as context to `ai.agent` steps. OTLP log documents are large (passthrough attributes in `_source`). If `elasticsearch.search` steps return full docs, the combined context can exceed the model's max input length: `"Input is too long for requested model"` (error from inference entity `.rainbow-sprinkles-elastic`). **Fix:** Always use `_source` filtering and small `size` in search steps that precede `ai.agent` steps
+13. **`ai.agent` agent-id placement** — The `agent-id` for `ai.agent` steps MUST be at the **step level** (like `connector-id`), NOT inside `with`. If placed inside `with` (as `agent_id` or `agentId`), the workflow engine silently strips it
+14. **Workflow `data.set` variable access** — Variables set by `data.set` inside an `if` step's nested branches are NOT accessible via the parent step name. `{{ steps.parent_if_step.output.var }}` resolves to empty. Use `{{ inputs.field }}` directly or `{{ steps.nested_set_step.output.var }}` instead
+15. **Workflow execution API** — `GET /api/workflowExecutions?workflowId={id}` lists executions. `GET /api/workflowExecutions/{executionId}` gets details (status, error, startedAt, finishedAt). The `history` field on the workflow object only shows completed runs
+16. **OTel CPU state names** — Use `wait` not `iowait` for I/O wait CPU state. The OTel standard CPU states are: `user`, `system`, `idle`, `wait`, `nice`, `interrupt`, `softirq`, `steal`. Elastic Infrastructure UI dashboards filter by these exact names
+17. **Passthrough mapping on `logs` stream** — OTLP `attributes.*` and most `resource.attributes.*` use passthrough mapping (stored in `_source` but NOT indexed). Only `body.text`, `severity_text`, `service.name`, `resource.attributes.service.name`, `host.name`, `@timestamp` are indexed. Use `body.text LIKE "*ErrorType*"` for ES|QL, `body.text: "ErrorType"` for KQL, and `match`/`match_phrase` on `body.text` for query DSL

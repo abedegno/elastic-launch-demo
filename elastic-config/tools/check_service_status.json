@@ -39,7 +39,7 @@
       }
     }
   },
-  "index": "logs-generic-default",
+  "index": "logs",
   "execution": {
     "type": "elasticsearch_query",
     "template": {
@@ -55,29 +55,17 @@
         "by_service": {
           "terms": { "field": "service.name", "size": 10 },
           "aggs": {
-            "status": {
-              "terms": { "field": "system.status" }
-            },
             "error_count": {
-              "filter": { "term": { "log.level": "ERROR" } }
+              "filter": { "term": { "severity_text": "ERROR" } }
             },
             "warn_count": {
-              "filter": { "term": { "log.level": "WARN" } }
-            },
-            "active_channels": {
-              "terms": { "field": "chaos.channel", "size": 20 }
-            },
-            "cloud_info": {
-              "top_hits": {
-                "size": 1,
-                "_source": ["cloud.provider", "cloud.region", "cloud.availability_zone", "cloud.platform"]
-              }
+              "filter": { "term": { "severity_text": "WARN" } }
             },
             "latest_event": {
               "top_hits": {
                 "size": 3,
                 "sort": [{ "@timestamp": "desc" }],
-                "_source": ["message", "@timestamp", "log.level", "error.type"]
+                "_source": ["body.text", "@timestamp", "severity_text"]
               }
             }
           }

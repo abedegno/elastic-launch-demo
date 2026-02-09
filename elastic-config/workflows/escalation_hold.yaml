@@ -52,8 +52,13 @@ steps:
       - name: escalate_search
         type: elasticsearch.search
         with:
-          index: "logs-generic.otel-default"
-          size: 3
+          index: "logs"
+          size: 2
+          _source:
+            - "body.text"
+            - "severity_text"
+            - "resource.attributes.service.name"
+            - "@timestamp"
           query:
             bool:
               filter:
@@ -95,12 +100,12 @@ steps:
 
       - name: hold_safety_check
         type: ai.agent
+        agent-id: nova7-launch-anomaly-analyst
         with:
-          agent_id: nova7-launch-anomaly-analyst
           message: >
-            A countdown hold has been requested for channel {{ inputs.channel }}.
-            Severity: {{ inputs.severity }}. Justification: {{ inputs.justification }}.
-            Please perform a rapid safety assessment of all subsystems.
+            Countdown hold requested for channel {{ inputs.channel }}
+            (severity: {{ inputs.severity }}). Reason: {{ inputs.justification }}.
+            Perform a rapid safety assessment using your search tools.
 
       - name: hold_safety_result
         type: console
@@ -152,7 +157,7 @@ steps:
       - name: resume_safety_check
         type: elasticsearch.search
         with:
-          index: "logs-generic.otel-default"
+          index: "logs"
           size: 0
           query:
             bool:

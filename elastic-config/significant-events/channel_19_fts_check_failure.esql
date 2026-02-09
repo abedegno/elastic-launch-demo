@@ -1,4 +1,4 @@
-FROM logs-generic.otel-default
-| WHERE attributes.error.type == "FTSCheckException" AND attributes.sensor.type == "safety_system" AND attributes.vehicle_section == "vehicle_wide"
-| STATS error_count = COUNT(*) BY attributes.error.type, attributes.sensor.type, attributes.vehicle_section
+FROM logs
+| WHERE body.text LIKE "*FTSCheckException*" AND severity_text == "ERROR"
+| STATS error_count = COUNT(*)
 | WHERE error_count > 5

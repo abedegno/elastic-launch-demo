@@ -285,7 +285,7 @@ curl -X POST "$SLACK_WEBHOOK_URL" \
 
 3. Verify data exists:
    ```
-   GET logs-generic-default/_count
+   GET logs/_count
    ```
 
 ### Significant event rules not firing

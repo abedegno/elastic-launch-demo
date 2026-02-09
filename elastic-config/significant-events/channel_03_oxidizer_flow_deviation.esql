@@ -1,4 +1,4 @@
-FROM logs-generic.otel-default
-| WHERE attributes.error.type == "OxidizerFlowException" AND attributes.sensor.type == "flow_rate" AND attributes.vehicle_section == "engine_bay"
-| STATS error_count = COUNT(*) BY attributes.error.type, attributes.sensor.type, attributes.vehicle_section
+FROM logs
+| WHERE body.text LIKE "*OxidizerFlowException*" AND severity_text == "ERROR"
+| STATS error_count = COUNT(*)
 | WHERE error_count > 5

@@ -1,4 +1,4 @@
-FROM logs-generic.otel-default
-| WHERE attributes.error.type == "WeatherDataGapException" AND attributes.sensor.type == "weather" AND attributes.vehicle_section == "launch_pad"
-| STATS error_count = COUNT(*) BY attributes.error.type, attributes.sensor.type, attributes.vehicle_section
+FROM logs
+| WHERE body.text LIKE "*WeatherDataGapException*" AND severity_text == "ERROR"
+| STATS error_count = COUNT(*)
 | WHERE error_count > 5

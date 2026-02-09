@@ -1,4 +1,4 @@
-FROM logs-generic.otel-default
-| WHERE attributes.error.type == "PacketCorruptionException" AND attributes.sensor.type == "data_integrity" AND attributes.vehicle_section == "ground_network"
-| STATS error_count = COUNT(*) BY attributes.error.type, attributes.sensor.type, attributes.vehicle_section
+FROM logs
+| WHERE body.text LIKE "*PacketCorruptionException*" AND severity_text == "ERROR"
+| STATS error_count = COUNT(*)
 | WHERE error_count > 5

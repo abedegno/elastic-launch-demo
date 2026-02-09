@@ -30,35 +30,35 @@
       }
     }
   },
-  "indices": ["logs-generic-default", "metrics-generic-default"],
+  "indices": ["logs", "metrics-generic-default"],
   "execution": {
     "type": "multi_search",
     "queries": [
       {
-        "description": "Count active errors by subsystem",
-        "index": "logs-generic-default",
+        "description": "Count active errors by service",
+        "index": "logs",
         "template": {
           "size": 0,
           "query": {
             "bool": {
               "must": [
-                { "term": { "log.level": "ERROR" } }
+                { "term": { "severity_text": "ERROR" } }
               ],
               "filter": [
-                { "range": { "@timestamp": { "gte": "{{time_range}}" } } },
-                { "term": { "launch.mission_id": "NOVA-7" } }
+                { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
               ]
             }
           },
           "aggs": {
-            "by_subsystem": {
-              "terms": { "field": "system.subsystem", "size": 10 },
+            "by_service": {
+              "terms": { "field": "service.name", "size": 10 },
               "aggs": {
-                "error_types": {
-                  "terms": { "field": "error.type", "size": 25 }
-                },
-                "by_service": {
-                  "terms": { "field": "service.name" }
+                "latest_errors": {
+                  "top_hits": {
+                    "size": 3,
+                    "sort": [{ "@timestamp": "desc" }],
+                    "_source": ["body.text", "@timestamp"]
+                  }
                 }
               }
             }
@@ -67,13 +67,14 @@
       },
       {
         "description": "Check for FTS anomalies specifically",
-        "index": "logs-generic-default",
+        "index": "logs",
         "template": {
           "size": 10,
           "query": {
             "bool": {
               "must": [
-                { "term": { "error.type": "FTSCheckException" } }
+                { "match_phrase": { "body.text": "FTSCheckException" } },
+                { "term": { "severity_text": "ERROR" } }
               ],
               "filter": [
                 { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
@@ -85,13 +86,14 @@
       },
       {
         "description": "Check for range safety tracking losses",
-        "index": "logs-generic-default",
+        "index": "logs",
         "template": {
           "size": 10,
           "query": {
             "bool": {
               "must": [
-                { "term": { "error.type": "TrackingLossException" } }
+                { "match_phrase": { "body.text": "TrackingLossException" } },
+                { "term": { "severity_text": "ERROR" } }
               ],
               "filter": [
                 { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
@@ -102,14 +104,14 @@
         }
       },
       {
-        "description": "Check active cascade warnings",
-        "index": "logs-generic-default",
+        "description": "Check active cascade warnings across services",
+        "index": "logs",
         "template": {
           "size": 0,
           "query": {
             "bool": {
               "must": [
-                { "exists": { "field": "cascade.source_channel" } }
+                { "term": { "severity_text": "WARN" } }
               ],
               "filter": [
                 { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
@@ -117,8 +119,8 @@
             }
           },
           "aggs": {
-            "cascade_sources": {
-              "terms": { "field": "cascade.source_channel", "size": 20 }
+            "cascade_services": {
+              "terms": { "field": "service.name", "size": 20 }
             }
           }
         }

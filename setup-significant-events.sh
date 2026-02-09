@@ -4,7 +4,7 @@
 # via the Kibana Streams Queries API.
 #
 # Creates 20 Streams query definitions (one per chaos fault channel) that
-# detect specific error patterns in logs-generic.otel-default. These power
+# detect specific error patterns in logs. These power
 # the Significant Events tab in the Kibana Streams UI.
 #
 # API reference (Technical Preview, added 9.2.0):
@@ -101,21 +101,14 @@ STREAM_NAME=""
 streams_out=$(kb_request GET "/api/streams" 2>/dev/null) || true
 
 if [[ -n "$streams_out" ]]; then
-    # Try to find the best stream name for logs-generic.otel-default
+    # Try to find the 'logs' stream (root stream where service logs are routed)
     STREAM_NAME=$(echo "$streams_out" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
     streams = data if isinstance(data, list) else data.get('streams', data.get('results', data.get('data', [])))
 
-    # Prefer exact match for logs-generic.otel-default
-    for s in streams:
-        name = s.get('name', s) if isinstance(s, dict) else s
-        if name == 'logs-generic.otel-default':
-            print(name)
-            sys.exit(0)
-
-    # Fall back to 'logs' (wired root stream)
+    # Prefer exact match for 'logs' (root stream)
     for s in streams:
         name = s.get('name', s) if isinstance(s, dict) else s
         if name == 'logs':
@@ -229,11 +222,7 @@ done)
 
 operations = []
 for num, name, subsystem, error_type, sensor_type, vehicle_section in channels:
-    kql_query = (
-        f'attributes.error.type: \"{error_type}\" '
-        f'AND attributes.sensor.type: \"{sensor_type}\" '
-        f'AND attributes.vehicle_section: \"{vehicle_section}\"'
-    )
+    kql_query = f'body.text: \"{error_type}\" AND severity_text: \"ERROR\"'
     op = {
         'index': {
             'id': f'nova7-se-ch{num}',

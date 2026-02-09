@@ -111,8 +111,39 @@ fi
 log_ok "Workflow ID: ${WORKFLOW_ID}"
 echo ""
 
-# ── Step 2: Create webhook connector ─────────────────────────────────────────
-log_info "--- Step 2: Create webhook connector ---"
+# ── Step 2: Clean old NOVA-7 connectors & create webhook connector ───────────
+log_info "--- Step 2: Clean old NOVA-7 connectors ---"
+
+# Delete any existing NOVA-7 connectors to avoid duplicates
+old_deleted=0
+if connectors_out=$(kb_request GET "/api/actions/connectors" 2>/dev/null); then
+    old_connector_ids=$(echo "$connectors_out" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    for c in data:
+        if 'NOVA-7' in c.get('name', ''):
+            print(c['id'])
+except:
+    pass
+" 2>/dev/null || true)
+
+    while IFS= read -r cid; do
+        if [[ -n "$cid" ]]; then
+            if kb_request DELETE "/api/actions/connector/${cid}" > /dev/null 2>&1; then
+                old_deleted=$((old_deleted + 1))
+            fi
+        fi
+    done <<< "$old_connector_ids"
+fi
+
+if [[ "$old_deleted" -gt 0 ]]; then
+    log_ok "Deleted $old_deleted existing NOVA-7 connector(s)."
+else
+    log_info "No existing NOVA-7 connectors to clean."
+fi
+
+log_info "Creating webhook connector..."
 
 CONNECTOR_BODY=$(python3 -c "
 import json
@@ -268,13 +299,8 @@ es_query = json.dumps({
         'bool': {
             'filter': [
                 {'range': {'@timestamp': {'gte': 'now-1m'}}},
-                {'bool': {
-                    'must': [
-                        {'term': {'attributes.error.type': error_type}},
-                        {'term': {'attributes.sensor.type': sensor_type}},
-                        {'term': {'attributes.vehicle_section': vehicle_section}}
-                    ]
-                }}
+                {'match_phrase': {'body.text': error_type}},
+                {'term': {'severity_text': 'ERROR'}}
             ]
         }
     }
@@ -296,7 +322,7 @@ rule = {
     'params': {
         'searchType': 'esQuery',
         'esQuery': es_query,
-        'index': ['logs-*'],
+        'index': ['logs*'],
         'timeField': '@timestamp',
         'threshold': [0],
         'thresholdComparator': '>',

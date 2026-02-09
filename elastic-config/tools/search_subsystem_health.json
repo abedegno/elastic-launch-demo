@@ -7,14 +7,10 @@
     "type": "object",
     "required": [],
     "properties": {
-      "subsystem": {
+      "service_name": {
         "type": "string",
-        "enum": ["propulsion", "guidance", "communications", "payload", "relay", "ground", "validation", "safety"],
-        "description": "Specific subsystem to query. If omitted, returns health for all subsystems."
-      },
-      "vehicle_section": {
-        "type": "string",
-        "description": "Filter by vehicle section (e.g., engine_bay, avionics, antenna_array, payload_bay, ground_network, launch_pad, fuel_tanks, vehicle_wide)."
+        "enum": ["mission-control", "fuel-system", "ground-systems", "navigation", "comms-array", "payload-monitor", "sensor-validator", "telemetry-relay", "range-safety"],
+        "description": "Specific service to query. If omitted, returns health for all services."
       },
       "time_range": {
         "type": "string",
@@ -28,7 +24,7 @@
       }
     }
   },
-  "index": "logs-generic-default",
+  "index": "logs",
   "execution": {
     "type": "elasticsearch_query",
     "template": {
@@ -37,28 +33,22 @@
         "bool": {
           "filter": [
             { "range": { "@timestamp": { "gte": "{{time_range}}" } } },
-            { "terms": { "log.level": ["ERROR", "WARN"] } }
+            { "terms": { "severity_text": ["ERROR", "WARN"] } }
           ]
         }
       },
       "aggs": {
-        "by_subsystem": {
-          "terms": { "field": "system.subsystem", "size": 10 },
+        "by_service": {
+          "terms": { "field": "service.name", "size": 10 },
           "aggs": {
             "by_severity": {
-              "terms": { "field": "log.level" }
-            },
-            "by_error_type": {
-              "terms": { "field": "error.type", "size": 25 }
-            },
-            "by_vehicle_section": {
-              "terms": { "field": "vehicle_section", "size": 15 }
+              "terms": { "field": "severity_text" }
             },
             "latest_event": {
               "top_hits": {
                 "size": 1,
                 "sort": [{ "@timestamp": "desc" }],
-                "_source": ["message", "@timestamp", "error.type", "system.status"]
+                "_source": ["body.text", "@timestamp", "severity_text"]
               }
             }
           }

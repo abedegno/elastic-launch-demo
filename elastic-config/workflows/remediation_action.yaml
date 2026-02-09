@@ -33,7 +33,7 @@ steps:
   - name: pre_action_snapshot
     type: elasticsearch.search
     with:
-      index: "logs-generic.otel-default"
+      index: "logs"
       size: 0
       query:
         bool:
@@ -96,7 +96,7 @@ steps:
   - name: post_action_snapshot
     type: elasticsearch.search
     with:
-      index: "logs-generic.otel-default"
+      index: "logs"
       size: 0
       query:
         bool:

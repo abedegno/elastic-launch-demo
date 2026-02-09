@@ -176,7 +176,7 @@ class HostMetricState:
         # Cumulative counters
         self.cpu_time = {
             f"cpu{i}": {"user": rng.uniform(1000, 5000), "system": rng.uniform(500, 2000),
-                        "idle": rng.uniform(10000, 50000), "iowait": rng.uniform(10, 200)}
+                        "idle": rng.uniform(10000, 50000), "wait": rng.uniform(10, 200)}
             for i in range(cpu_count)
         }
         self.disk_io_read = rng.uniform(1e9, 5e9)
@@ -203,7 +203,7 @@ class HostMetricState:
             self.cpu_time[cpu_id]["user"] += rng.uniform(0.5, 3.0)
             self.cpu_time[cpu_id]["system"] += rng.uniform(0.2, 1.5)
             self.cpu_time[cpu_id]["idle"] += rng.uniform(5.0, 9.0)
-            self.cpu_time[cpu_id]["iowait"] += rng.uniform(0.0, 0.5)
+            self.cpu_time[cpu_id]["wait"] += rng.uniform(0.0, 0.5)
         self.disk_io_read += rng.randint(50000, 5000000)
         self.disk_io_write += rng.randint(100000, 10000000)
         self.disk_ops_read += rng.randint(5, 200)

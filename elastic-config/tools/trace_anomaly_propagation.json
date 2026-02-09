@@ -5,11 +5,11 @@
   "type": "elasticsearch",
   "parameters": {
     "type": "object",
-    "required": ["source_channel"],
+    "required": ["error_type"],
     "properties": {
-      "source_channel": {
-        "type": "integer",
-        "description": "The originating chaos channel number (1-20) to trace propagation from."
+      "error_type": {
+        "type": "string",
+        "description": "The error type to trace propagation for (e.g., FuelPressureException, GPSMultipathException)."
       },
       "time_range": {
         "type": "string",
@@ -20,28 +20,23 @@
         "type": "boolean",
         "default": true,
         "description": "Include cascade (secondary) effects in the trace."
-      },
-      "include_traces": {
-        "type": "boolean",
-        "default": true,
-        "description": "Include distributed trace spans in the propagation analysis."
       }
     }
   },
-  "indices": ["logs-generic-default", "traces-generic-default"],
+  "indices": ["logs"],
   "execution": {
     "type": "multi_search",
     "queries": [
       {
-        "description": "Find direct fault events for the source channel",
-        "index": "logs-generic-default",
+        "description": "Find direct fault events for this error type",
+        "index": "logs",
         "template": {
           "size": 50,
           "query": {
             "bool": {
               "must": [
-                { "term": { "chaos.channel": "{{source_channel}}" } },
-                { "term": { "log.level": "ERROR" } }
+                { "match_phrase": { "body.text": "{{error_type}}" } },
+                { "term": { "severity_text": "ERROR" } }
               ],
               "filter": [
                 { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
@@ -52,14 +47,14 @@
         }
       },
       {
-        "description": "Find cascade events triggered by this channel",
-        "index": "logs-generic-default",
+        "description": "Find cascade WARN events across services",
+        "index": "logs",
         "template": {
           "size": 50,
           "query": {
             "bool": {
               "must": [
-                { "term": { "cascade.source_channel": "{{source_channel}}" } }
+                { "term": { "severity_text": "WARN" } }
               ],
               "filter": [
                 { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
@@ -71,16 +66,14 @@
       },
       {
         "description": "Aggregate propagation timeline by service",
-        "index": "logs-generic-default",
+        "index": "logs",
         "template": {
           "size": 0,
           "query": {
             "bool": {
-              "should": [
-                { "term": { "chaos.channel": "{{source_channel}}" } },
-                { "term": { "cascade.source_channel": "{{source_channel}}" } }
+              "must": [
+                { "terms": { "severity_text": ["ERROR", "WARN"] } }
               ],
-              "minimum_should_match": 1,
               "filter": [
                 { "range": { "@timestamp": { "gte": "{{time_range}}" } } }
               ]
@@ -95,9 +88,6 @@
               "aggs": {
                 "by_service": {
                   "terms": { "field": "service.name" }
-                },
-                "by_cloud": {
-                  "terms": { "field": "cloud.provider" }
                 }
               }
             }

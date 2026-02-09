@@ -148,16 +148,16 @@ create_tool "search_telemetry_logs" '{
   "type": "index_search",
   "description": "Search NOVA-7 telemetry logs for anomaly investigation. Supports filtering by error type, sensor type, vehicle section, service name, severity, channel, and cloud provider. Primary investigation tool for root cause analysis.",
   "configuration": {
-    "pattern": "logs-*"
+    "pattern": "logs*"
   }
 }'
 
 create_tool "search_subsystem_health" '{
   "id": "search_subsystem_health",
   "type": "esql",
-  "description": "Query health status of NOVA-7 vehicle subsystems by aggregating recent telemetry. Returns error counts, warning counts, and overall health status for each subsystem (propulsion, guidance, communications, payload, relay, ground, validation, safety).",
+  "description": "Query health status of NOVA-7 services by aggregating recent telemetry. Returns error counts, warning counts, and overall health status for each of the 9 services (fuel-system, navigation, comms-array, mission-control, range-safety, ground-systems, payload-monitor, sensor-validator, telemetry-relay).",
   "configuration": {
-    "query": "FROM logs-* | WHERE @timestamp > NOW() - 15 MINUTES | STATS error_count = COUNT(*) WHERE severity_text == \"ERROR\", warn_count = COUNT(*) WHERE severity_text == \"WARN\", total = COUNT(*) BY attributes.system.subsystem | SORT error_count DESC",
+    "query": "FROM logs | WHERE @timestamp > NOW() - 15 MINUTES | STATS error_count = COUNT(*) WHERE severity_text == \"ERROR\", warn_count = COUNT(*) WHERE severity_text == \"WARN\", total = COUNT(*) BY service.name | SORT error_count DESC",
     "params": {}
   }
 }'
@@ -165,9 +165,9 @@ create_tool "search_subsystem_health" '{
 create_tool "check_service_status" '{
   "id": "check_service_status",
   "type": "esql",
-  "description": "Check operational status of individual NOVA-7 microservices. Returns error counts, cloud deployment info, and recent error summaries for each of the 9 services.",
+  "description": "Check operational status of individual NOVA-7 microservices. Returns error counts, warning counts, and log totals for each of the 9 services (fuel-system, navigation, comms-array, mission-control, range-safety, ground-systems, payload-monitor, sensor-validator, telemetry-relay).",
   "configuration": {
-    "query": "FROM logs-* | WHERE @timestamp > NOW() - 15 MINUTES | STATS error_count = COUNT(*) WHERE severity_text == \"ERROR\", warn_count = COUNT(*) WHERE severity_text == \"WARN\", total = COUNT(*) BY resource.attributes.service.name, resource.attributes.cloud.provider, resource.attributes.cloud.region | SORT error_count DESC",
+    "query": "FROM logs | WHERE @timestamp > NOW() - 15 MINUTES | STATS error_count = COUNT(*) WHERE severity_text == \"ERROR\", warn_count = COUNT(*) WHERE severity_text == \"WARN\", total = COUNT(*) BY service.name | SORT error_count DESC",
     "params": {}
   }
 }'
@@ -184,9 +184,9 @@ create_tool "search_known_anomalies" '{
 create_tool "trace_anomaly_propagation" '{
   "id": "trace_anomaly_propagation",
   "type": "esql",
-  "description": "Trace the propagation path of anomalies across NOVA-7 services and cloud boundaries. Identifies cascade chains showing which services were affected and the temporal order of fault propagation.",
+  "description": "Trace the propagation path of anomalies across NOVA-7 services. Shows which services have errors and warnings over time to identify cascade chains and the temporal order of fault propagation.",
   "configuration": {
-    "query": "FROM traces-* | WHERE @timestamp > NOW() - 15 MINUTES | STATS error_count = COUNT(*), services = COUNT_DISTINCT(resource.attributes.service.name) BY trace.id | SORT error_count DESC | LIMIT 20",
+    "query": "FROM logs | WHERE @timestamp > NOW() - 15 MINUTES AND severity_text IN (\"ERROR\", \"WARN\") | STATS error_count = COUNT(*) WHERE severity_text == \"ERROR\", warn_count = COUNT(*) WHERE severity_text == \"WARN\" BY service.name | SORT error_count DESC",
     "params": {}
   }
 }'
@@ -194,9 +194,19 @@ create_tool "trace_anomaly_propagation" '{
 create_tool "launch_safety_assessment" '{
   "id": "launch_safety_assessment",
   "type": "esql",
-  "description": "Comprehensive launch safety assessment. Evaluates all critical NOVA-7 subsystems against launch commit criteria. Checks for active FTS anomalies, range safety tracking losses, and cascade warnings across all 20 fault channels.",
+  "description": "Comprehensive launch safety assessment. Evaluates all critical NOVA-7 services against launch commit criteria. Checks for active errors including FTS anomalies (FTSCheckException), range safety tracking losses (TrackingLossException), and cascade warnings across services. Returns GO/NO-GO data.",
   "configuration": {
-    "query": "FROM logs-* | WHERE @timestamp > NOW() - 15 MINUTES AND severity_text IN (\"ERROR\", \"FATAL\") | STATS error_count = COUNT(*), channels = COUNT_DISTINCT(attributes.chaos.channel) BY attributes.system.subsystem, resource.attributes.service.name | SORT error_count DESC",
+    "query": "FROM logs | WHERE @timestamp > NOW() - 15 MINUTES AND severity_text IN (\"ERROR\", \"WARN\") | STATS error_count = COUNT(*) WHERE severity_text == \"ERROR\", warn_count = COUNT(*) WHERE severity_text == \"WARN\" BY service.name | SORT error_count DESC",
+    "params": {}
+  }
+}'
+
+create_tool "esql_telemetry_query" '{
+  "id": "esql_telemetry_query",
+  "type": "esql",
+  "description": "Run custom ES|QL queries against NOVA-7 telemetry logs for advanced analytics, threshold validation, and anomaly detection. Available fields: @timestamp, body.text (log message — error types like FuelPressureException appear here), severity_text (INFO/WARN/ERROR), service.name (9 services), log.level. Use body.text LIKE \"*ErrorType*\" to match specific error types. Example: FROM logs | WHERE body.text LIKE \"*FuelPressureException*\" AND severity_text == \"ERROR\" | STATS count = COUNT(*)",
+  "configuration": {
+    "query": "FROM logs | WHERE @timestamp > NOW() - 15 MINUTES | LIMIT 25",
     "params": {}
   }
 }'

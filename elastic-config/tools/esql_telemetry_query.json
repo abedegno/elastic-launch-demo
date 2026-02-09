@@ -1,0 +1,30 @@
+{
+  "tool_id": "esql_telemetry_query",
+  "name": "ES|QL Telemetry Query",
+  "description": "Run ES|QL queries against NOVA-7 telemetry logs for advanced analytics — aggregations, statistics, correlations, and threshold validation. Use this tool when you need to compute error counts, compare time windows, find statistical anomalies, or validate significant event thresholds. The logs index has these queryable fields: @timestamp, body.text (log message), severity_text (INFO/WARN/ERROR), service.name (9 services), log.level. Error type names (e.g. FuelPressureException) appear in body.text.",
+  "type": "elasticsearch",
+  "parameters": {
+    "type": "object",
+    "required": ["esql_query"],
+    "properties": {
+      "esql_query": {
+        "type": "string",
+        "description": "The ES|QL query to execute. Must start with FROM logs. Available fields: @timestamp, body.text, severity_text, service.name, log.level. Use body.text LIKE \"*ErrorType*\" to match specific error types. Examples: 'FROM logs | WHERE severity_text == \"ERROR\" | STATS error_count = COUNT(*) BY service.name' or 'FROM logs | WHERE body.text LIKE \"*FuelPressureException*\" AND severity_text == \"ERROR\" | STATS count = COUNT(*)'."
+      }
+    }
+  },
+  "index": "logs",
+  "execution": {
+    "type": "esql",
+    "endpoint": "/_query",
+    "method": "POST",
+    "body_template": {
+      "query": "{{esql_query}}"
+    }
+  },
+  "metadata": {
+    "mission_id": "NOVA-7",
+    "category": "investigation",
+    "priority": "primary"
+  }
+}

@@ -13,15 +13,7 @@
       },
       "error_type": {
         "type": "string",
-        "description": "Filter by exact error type (e.g., ThermalCalibrationException, GPSMultipathException). Maps to field: error.type"
-      },
-      "sensor_type": {
-        "type": "string",
-        "description": "Filter by sensor type (e.g., thermal, gps, imu, pressure, rf_signal). Maps to field: sensor.type"
-      },
-      "vehicle_section": {
-        "type": "string",
-        "description": "Filter by vehicle section (e.g., engine_bay, avionics, antenna_array, payload_bay, ground_network, launch_pad, fuel_tanks, vehicle_wide). Maps to field: vehicle_section"
+        "description": "Filter by error type keyword in log body (e.g., ThermalCalibrationException, GPSMultipathException). Uses body.text match."
       },
       "service_name": {
         "type": "string",
@@ -30,21 +22,7 @@
       "severity": {
         "type": "string",
         "enum": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"],
-        "description": "Filter by log severity level. Maps to field: log.level"
-      },
-      "channel": {
-        "type": "integer",
-        "description": "Filter by chaos channel number (1-20). Maps to field: chaos.channel"
-      },
-      "cloud_provider": {
-        "type": "string",
-        "enum": ["aws", "gcp", "azure"],
-        "description": "Filter by cloud provider. Maps to field: cloud.provider"
-      },
-      "launch_phase": {
-        "type": "string",
-        "enum": ["PRE-LAUNCH", "COUNTDOWN", "LAUNCH", "ASCENT"],
-        "description": "Filter by mission phase. Maps to field: launch.phase"
+        "description": "Filter by log severity level. Maps to field: severity_text"
       },
       "time_range": {
         "type": "string",
@@ -64,7 +42,7 @@
       }
     }
   },
-  "index": "logs-generic-default",
+  "index": "logs",
   "execution": {
     "type": "elasticsearch_query",
     "template": {

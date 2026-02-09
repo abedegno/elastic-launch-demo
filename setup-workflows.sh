@@ -79,22 +79,45 @@ log_info "=========================================="
 log_info "Kibana: ${KIBANA_URL}"
 echo ""
 
+# ── Clean existing NOVA-7 workflows ──────────────────────────────────────────
+log_info "--- Cleaning existing NOVA-7 workflows ---"
+
+wf_deleted=0
+if existing_out=$(kb_request POST "/api/workflows/search" '{"page":1,"size":100}' 2>/dev/null); then
+    nova7_wf_ids=$(echo "$existing_out" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    items = data if isinstance(data, list) else data.get('results', data.get('items', data.get('data', [])))
+    for item in items:
+        if 'NOVA-7' in item.get('name', ''):
+            print(item['id'])
+except:
+    pass
+" 2>/dev/null || true)
+
+    while IFS= read -r wid; do
+        if [[ -n "$wid" ]]; then
+            if kb_request DELETE "/api/workflows/${wid}" > /dev/null 2>&1; then
+                wf_deleted=$((wf_deleted + 1))
+            fi
+        fi
+    done <<< "$nova7_wf_ids"
+fi
+
+if [[ "$wf_deleted" -gt 0 ]]; then
+    log_ok "Deleted $wf_deleted existing NOVA-7 workflow(s)."
+else
+    log_info "No existing NOVA-7 workflows to clean."
+fi
+echo ""
+
 # ── Deploy workflows ─────────────────────────────────────────────────────────
 log_info "--- Deploying Workflows ---"
 
 WORKFLOW_DIR="$SCRIPT_DIR/elastic-config/workflows"
 workflow_count=0
 workflow_fail=0
-
-# Fetch all existing workflows once for idempotent upsert
-log_info "Checking for existing workflows..."
-EXISTING_WORKFLOWS_JSON=""
-if existing_out=$(kb_request POST "/api/workflows/search" '{"page":1,"size":100}' 2>/dev/null); then
-    EXISTING_WORKFLOWS_JSON="$existing_out"
-    log_ok "Retrieved existing workflow list."
-else
-    log_warn "Could not fetch existing workflows — will create new."
-fi
 
 for yaml_file in "$WORKFLOW_DIR"/*.yaml; do
     if [[ ! -f "$yaml_file" ]]; then
@@ -115,7 +138,7 @@ with open('$yaml_file') as f:
             break
 " 2>/dev/null || echo "$workflow_name")
 
-    log_info "Deploying workflow: ${display_name}"
+    log_info "Creating workflow: ${display_name}"
 
     # Build JSON body with YAML content as a string
     json_body=$(python3 -c "
@@ -131,43 +154,12 @@ print(json.dumps({'yaml': yaml_content}))
         continue
     fi
 
-    # Check if workflow already exists by matching display name
-    existing_id=""
-    if [[ -n "$EXISTING_WORKFLOWS_JSON" ]]; then
-        existing_id=$(echo "$EXISTING_WORKFLOWS_JSON" | python3 -c "
-import sys, json
-display = '$display_name'
-try:
-    data = json.load(sys.stdin)
-    items = data if isinstance(data, list) else data.get('results', data.get('items', data.get('data', [])))
-    for item in items:
-        if item.get('name', '') == display:
-            print(item['id'])
-            break
-except:
-    pass
-" 2>/dev/null || true)
-    fi
-
-    if [[ -n "$existing_id" ]]; then
-        # Update existing workflow
-        log_info "Found existing workflow (id: ${existing_id}), updating..."
-        if kb_request PUT "/api/workflows/${existing_id}" "$json_body" > /dev/null 2>&1; then
-            log_ok "Workflow ${display_name} updated."
-            workflow_count=$((workflow_count + 1))
-        else
-            log_warn "Failed to update workflow ${display_name}."
-            workflow_fail=$((workflow_fail + 1))
-        fi
+    if result=$(kb_request POST "/api/workflows" "$json_body" 2>&1); then
+        log_ok "Workflow ${display_name} created."
+        workflow_count=$((workflow_count + 1))
     else
-        # Create new workflow
-        if result=$(kb_request POST "/api/workflows" "$json_body" 2>&1); then
-            log_ok "Workflow ${display_name} created."
-            workflow_count=$((workflow_count + 1))
-        else
-            log_warn "Failed to create workflow ${display_name}."
-            workflow_fail=$((workflow_fail + 1))
-        fi
+        log_warn "Failed to create workflow ${display_name}."
+        workflow_fail=$((workflow_fail + 1))
     fi
 done
 

@@ -128,13 +128,13 @@ echo ""
 
 # ── 3. OTel Log Data ─────────────────────────────────────────────────────────
 echo "--- OTel Log Data ---"
-otel_count=$(get_count "logs-generic.otel-default")
+otel_count=$(get_count "logs")
 if [[ "$otel_count" -gt 0 ]]; then
-    pass "logs-generic.otel-default has data ($otel_count docs)"
+    pass "logs has data ($otel_count docs)"
 elif [[ "$otel_count" -eq 0 ]]; then
-    warn "logs-generic.otel-default exists but is empty (run the demo app first)"
+    warn "logs exists but is empty (run the demo app first)"
 else
-    warn "logs-generic.otel-default index not found (run the demo app first)"
+    warn "logs index not found (run the demo app first)"
 fi
 echo ""
 
@@ -238,10 +238,6 @@ import sys, json
 try:
     data = json.load(sys.stdin)
     streams = data if isinstance(data, list) else data.get('streams', data.get('results', data.get('data', [])))
-    for s in streams:
-        name = s.get('name', s) if isinstance(s, dict) else s
-        if name == 'logs-generic.otel-default':
-            print(name); exit(0)
     for s in streams:
         name = s.get('name', s) if isinstance(s, dict) else s
         if name == 'logs':

@@ -40,6 +40,40 @@ log_info "=========================================="
 log_info "Kibana: ${KIBANA_URL}"
 echo ""
 
+# ── Ensure data view exists ──────────────────────────────────────────────────
+log_info "Ensuring 'logs*' data view exists..."
+
+# Delete old logs-* data view if it exists (avoid duplicates)
+curl -s -o /dev/null -w "" \
+    -X DELETE "${KIBANA_URL}/api/data_views/data_view/logs-*" \
+    -H "kbn-xsrf: true" \
+    -H "Authorization: ApiKey ${ELASTIC_API_KEY}" 2>/dev/null || true
+
+# Create or update the logs* data view
+dv_response=$(curl -s -w "\n%{http_code}" \
+    -X POST "${KIBANA_URL}/api/data_views/data_view" \
+    -H "Content-Type: application/json" \
+    -H "kbn-xsrf: true" \
+    -H "Authorization: ApiKey ${ELASTIC_API_KEY}" \
+    -d '{
+  "data_view": {
+    "id": "logs*",
+    "title": "logs*",
+    "name": "NOVA-7 Logs",
+    "timeFieldName": "@timestamp"
+  },
+  "override": true
+}')
+
+dv_code=$(echo "$dv_response" | tail -1)
+if [[ "$dv_code" -ge 200 && "$dv_code" -lt 300 ]]; then
+    log_ok "Data view 'logs*' created/updated."
+else
+    log_warn "Could not create data view (HTTP $dv_code). Dashboard may not load correctly."
+fi
+
+echo ""
+
 # ── Import dashboard NDJSON ───────────────────────────────────────────────────
 NDJSON_FILE="$SCRIPT_DIR/elastic-config/dashboards/exec-dashboard.ndjson"
 

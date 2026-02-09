@@ -127,7 +127,7 @@ log_info "--- Creating Index Templates ---"
 
 # Index template for NOVA-7 telemetry logs
 LOGS_TEMPLATE='{
-  "index_patterns": ["logs-generic-default"],
+  "index_patterns": ["logs"],
   "template": {
     "settings": {
       "number_of_shards": 1,

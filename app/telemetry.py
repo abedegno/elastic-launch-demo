@@ -94,6 +94,7 @@ class OTLPClient:
             "data_stream.type": "logs",
             "data_stream.dataset": "generic",
             "data_stream.namespace": "default",
+            "elasticsearch.index": "logs",
         }
         return {
             "attributes": _format_attributes(attrs),
@@ -255,7 +256,12 @@ class OTLPClient:
         import copy
 
         res = copy.deepcopy(resource)
-        for attr in res.get("attributes", []):
+        # Remove elasticsearch.index so metrics/traces use default data_stream routing
+        res["attributes"] = [
+            attr for attr in res.get("attributes", [])
+            if attr["key"] != "elasticsearch.index"
+        ]
+        for attr in res["attributes"]:
             if attr["key"] == "data_stream.type":
                 attr["value"]["stringValue"] = stream_type
                 break
