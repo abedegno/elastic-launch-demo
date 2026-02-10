@@ -36,34 +36,24 @@ inputs:
 
 steps:
   - name: pre_action_snapshot
-    type: elasticsearch.search
+    type: elasticsearch.esql.query
     with:
-      index: "logs"
-      size: 5
-      query:
-        bool:
-          must:
-            - match:
-                body.text: "{{ inputs.error_type }}"
-            - term:
-                severity_text: "ERROR"
-          filter:
-            - range:
-                "@timestamp":
-                  gte: "now-30m"
+      query: >
+        FROM logs,logs.* | WHERE KQL("body.text: \"{{ inputs.error_type }}\" AND severity_text: \"ERROR\"") | KEEP event_name
+      format: json
 
   - name: extract_callback
     type: data.set
     with:
       var:
-        - event_meta: "${{ steps.pre_action_snapshot.output.hits.hits[0]._source.event_name | json_parse }}"
+        - event_meta: "${{ steps.pre_action_snapshot.output.values[1][0] | json_parse }}"
 
   - name: log_pre_action
     type: console
     with:
       message: >
-        Pre-action snapshot for channel {{ inputs.channel }}:
-        {{ steps.pre_action_snapshot.output.hits.total.value }} errors in last 5 minutes.
+        Pre-action snapshot for channel {{ inputs.channel }}.
+        callback_url extracted from latest error log.
         callback_url: {{ steps.extract_callback.output.var[0].event_meta.callback_url }}.
 
   - name: safety_check
@@ -101,22 +91,17 @@ steps:
       duration: "30s"
 
   - name: post_action_snapshot
-    type: elasticsearch.search
+    type: elasticsearch.esql.query
     with:
-      index: "logs"
-      size: 0
-      query:
-        bool:
-          filter:
-            - range:
-                "@timestamp":
-                  gte: "now-30s"
-            - term:
-                severity_text: "ERROR"
+      query: >
+        FROM logs,logs.*
+        | WHERE @timestamp > NOW() - 30 SECONDS AND severity_text == "ERROR"
+        | STATS post_errors = COUNT(*)
+      format: json
 
   - name: evaluate_result
     type: if
-    condition: "steps.post_action_snapshot.output.hits.total.value : 0"
+    condition: "steps.post_action_snapshot.output.values.0.0 : 0"
     steps:
       - name: log_success
         type: console
@@ -128,7 +113,7 @@ steps:
         with:
           message: >
             Remediation PARTIAL: Post-action errors =
-            {{ steps.post_action_snapshot.output.hits.total.value }}.
+            {{ steps.post_action_snapshot.output.values[0][0] }}.
             Manual investigation may be needed.
 
   - name: audit_log
@@ -141,7 +126,7 @@ steps:
         target_service: "{{ inputs.target_service }}"
         justification: "{{ inputs.justification }}"
         dry_run: "{{ inputs.dry_run }}"
-        pre_error_count: "{{ steps.pre_action_snapshot.output.hits.total.value }}"
-        post_error_count: "{{ steps.post_action_snapshot.output.hits.total.value }}"
+        pre_error_count: "{{ steps.pre_action_snapshot.output.values[0] }}"
+        post_error_count: "{{ steps.post_action_snapshot.output.values[0][0] }}"
         mission_id: "NOVA-7"
       refresh: wait_for

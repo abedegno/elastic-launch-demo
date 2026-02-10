@@ -268,7 +268,8 @@ inputs:
 |------|-------------|-------------------|
 | `console` | Log a message | `message` |
 | `http` | HTTP request | `url`, `method`, `headers`, `body`, `timeout` |
-| `elasticsearch.search` | ES search | `index`, `size`, `query` (NO `aggs`, `sort`, `_source`) |
+| `elasticsearch.search` | ES search | `index`, `size`, `query` (NO `aggs`, `sort`, `_source`, `match_phrase`) |
+| `elasticsearch.esql.query` | ES\|QL query | `query`, `format` (use `json`) |
 | `elasticsearch.index` | Index a doc | `index`, `document`, `id`, `refresh` |
 | `elasticsearch.request` | Generic ES | `method`, `path`, `headers`, `body` |
 | `elasticsearch.indices.exists` | Check index | `index` |
@@ -360,7 +361,7 @@ When `valid: false`:
 2. `definition: null` = schema didn't match at all
 3. No error details in API response — must bisect by removing steps
 4. Strategy: start with minimal workflow (1 step), add steps back one at a time
-5. Common causes: `sort` in es.search, wrong step type names, `params` instead of `with`, `id` instead of `name` on steps
+5. Common causes: `sort` in es.search, `match_phrase` in es.search, wrong step type names, `params` instead of `with`, `id` instead of `name` on steps
 
 ### Example: Minimal Valid Workflow
 ```yaml
@@ -593,6 +594,7 @@ aggregated with term/match/range queries or ES|QL WHERE clauses.
 | `log.level` | keyword | Same as `severity_text` |
 | `service.name` | keyword | 9 services (e.g., `fuel-system`, `navigation`) |
 | `resource.attributes.service.name` | keyword | Same as `service.name` |
+| `event_name` | keyword | Top-level field; contains JSON with callback_url/user_email |
 | `@timestamp` | date | Event timestamp |
 
 **NOT indexed (source-only) fields:** `attributes.*`, `resource.attributes.cloud.*`,
@@ -742,7 +744,8 @@ POST /api/actions/connector
 23. **`inputs.*` from alert connector resolves BLANK everywhere** — When an alert rule fires a workflow via the `.workflows` connector with `subActionParams.inputs`, those inputs resolve to **empty strings** in ALL workflow step contexts: `elasticsearch.search` query fields, `console` messages, `email` subject/message/to, `http` body, etc. Do NOT rely on `inputs.*` in alert-triggered workflows. Use `event.*` namespace instead (e.g., `event.rule.tags[1]` for error type, `event.rule.name` for rule name)
 24. **Having an `inputs:` schema may block alert context** — If an alert-triggered workflow defines an `inputs:` schema, it may filter/block the raw alert context document. For workflows that only need alert context (not manual inputs), remove the `inputs:` block entirely and use only `event.*` for all data access
 25. **Workflow `if` conditions use KQL dot paths, NOT `{{ }}` templates** — The `condition` field in workflow steps uses KQL syntax with literal dot paths as field names. **CORRECT:** `condition: "inputs.severity : critical"`. **WRONG:** `condition: "{{ inputs.severity }} : critical"` (template substitution replaces the value, then KQL interprets the value as a field name → always false). For array access in conditions, use `.0.` instead of `[0]`: `condition: "steps.set_data.output.var.0.email : *@*"`
-26. **`elasticsearch.search` schema — `aggs`, `_source`, `sort`, `exists` all NOT allowed** — The workflow schema for `elasticsearch.search` steps only allows `index`, `size`, and `query` in the `with` block. Including `sort` → `Valid: false`. Including `aggs` → validation warnings. Including `_source` → rejected. Including `exists` query → `Valid: false`. **Workarounds:** Use `size: 0` + `hits.total.value` instead of `aggs` for counts. Use small `size` instead of `_source` filtering. Use wide time ranges (`now-30m`) to compensate for lack of `sort`. Use `must_not` + `match` instead of `exists`
+26. **`elasticsearch.search` schema — `aggs`, `_source`, `sort`, `exists`, `match_phrase` all NOT allowed** — The workflow schema for `elasticsearch.search` steps only allows `index`, `size`, and `query` with basic query types (`match`, `term`, `range`, `bool`). Including `sort` → `Valid: false`. Including `match_phrase` → `Valid: false` (shows as "Untitled workflow"). Including `aggs` → validation warnings. Including `_source` → rejected. Including `exists` query → `Valid: false`. **Preferred workaround:** Use `elasticsearch.esql.query` with `KQL()` function instead — e.g. `FROM logs,logs.* | WHERE KQL("body.text: \"ErrorType\" AND severity_text: \"ERROR\"") | KEEP event_name`. For counts: `| STATS total = COUNT(*)`. Output format: `{columns: [...], values: [[...]]}` — access via `steps.X.output.values[row][col]`
 27. **`Elastic-Cloud-SMTP` system email connector** — Pre-configured email connector on Elastic Cloud serverless. Use `connector-id: Elastic-Cloud-SMTP` in email steps. Sends from `noreply@alerts.elastic.co`. Returns `{accepted: [...], rejected: [...], response: "250 2.0.0 Ok: queued"}`
-28. **Extracting callback_url from log `event_name`** — OTLP log attributes include `event_name` containing a JSON string like `{"callback_url": "http://...", "user_email": "user@example.com"}`. Since `attributes.event_name` is passthrough (not indexed), extract it from search hit `_source` using `data.set` with `json_parse` filter: `${{ steps.search.output.hits.hits[0]._source.event_name | json_parse }}`. Access parsed fields via `steps.set_step.output.var[0].parsed_field.callback_url`
-29. **Alert rule tags for workflow data passing** — Since `inputs.*` is blank in alert-triggered workflows, encode key data in alert rule tags. Example: `tags: ["nova7", "FuelPressureException"]` → access in workflow as `event.rule.tags[1]`. Keep tags minimal (prefix + error_type) for reliable array index access
+28. **Extracting callback_url from log `event_name`** — `event_name` is a top-level indexed `keyword` field (NOT a passthrough attribute). It contains a JSON string like `{"callback_url": "http://...", "user_email": "user@example.com"}`. Extract using ES|QL: `FROM logs,logs.* | WHERE KQL("body.text: \"ErrorType\"...") | KEEP event_name` → then `data.set` with `json_parse`: `${{ steps.search.output.values[1][0] | json_parse }}`. Access parsed fields via `steps.set_step.output.var[0].event_meta.callback_url`
+29. **`elasticsearch.esql.query` step — preferred for text search in workflows** — Use `elasticsearch.esql.query` instead of `elasticsearch.search` when you need `match_phrase`, `sort`, or other schema-restricted features. Key patterns: (a) Use `FROM logs,logs.*` to include sub-streams. (b) Use `KQL()` function for text matching: `WHERE KQL("body.text: \"ErrorType\" AND severity_text: \"ERROR\"")`. (c) Output is `{columns: [{name, type}], values: [[row1], [row2]]}`. (d) Access values positionally: `steps.X.output.values[0][0]` for first row, first column. (e) Column order matches `KEEP` clause. (f) `format: json` is required in `with` block
+30. **Alert rule tags for workflow data passing** — Since `inputs.*` is blank in alert-triggered workflows, encode key data in alert rule tags. Example: `tags: ["nova7", "FuelPressureException"]` → access in workflow as `event.rule.tags[1]`. Keep tags minimal (prefix + error_type) for reliable array index access

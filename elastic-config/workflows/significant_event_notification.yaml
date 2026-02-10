@@ -10,35 +10,20 @@ triggers:
 
 steps:
   - name: enrich_context
-    type: elasticsearch.search
+    type: elasticsearch.esql.query
     with:
-      index: "logs"
-      size: 1
-      query:
-        bool:
-          must:
-            - match:
-                body.text: "{{ event.rule.tags[1] }}"
-            - term:
-                severity_text: "ERROR"
-          filter:
-            - range:
-                "@timestamp":
-                  gte: "now-30m"
+      query: >
+        FROM logs,logs.* | WHERE KQL("body.text: \"{{ event.rule.tags[1] }}\" AND severity_text: \"ERROR\"") | KEEP event_name
+      format: json
 
   - name: count_errors
-    type: elasticsearch.search
+    type: elasticsearch.esql.query
     with:
-      index: "logs"
-      size: 0
-      query:
-        bool:
-          filter:
-            - range:
-                "@timestamp":
-                  gte: "now-15m"
-            - term:
-                severity_text: "ERROR"
+      query: >
+        FROM logs,logs.*
+        | WHERE @timestamp > NOW() - 15 MINUTES AND severity_text == "ERROR"
+        | STATS total_errors = COUNT(*)
+      format: json
 
   - name: log_notification
     type: console
@@ -46,14 +31,13 @@ steps:
       message: >
         NOVA-7 Significant Event — {{ event.rule.name }}.
         Error type: {{ event.rule.tags[1] }}.
-        Recent matches: {{ steps.enrich_context.output.hits.total.value }}.
-        Total errors: {{ steps.count_errors.output.hits.total.value }}.
+        Total errors: {{ steps.count_errors.output.values[0][0] }}.
 
   - name: parse_event_meta
     type: data.set
     with:
       var:
-        - event_meta: "${{ steps.enrich_context.output.hits.hits[0]._source.event_name | json_parse }}"
+        - event_meta: "${{ steps.enrich_context.output.values[1][0] | json_parse }}"
 
   - name: send_notification
     type: email
@@ -67,8 +51,7 @@ steps:
 
         Rule: {{ event.rule.name }}
         Error Type: {{ event.rule.tags[1] }}
-        Recent matches: {{ steps.enrich_context.output.hits.total.value }}
-        Total errors (15m): {{ steps.count_errors.output.hits.total.value }}
+        Total errors (15m): {{ steps.count_errors.output.values[0][0] }}
 
         Open Kibana Agent Builder to investigate and request remediation.
 
@@ -79,6 +62,6 @@ steps:
       document:
         rule_name: "{{ event.rule.name }}"
         error_type: "{{ event.rule.tags[1] }}"
-        total_errors: "{{ steps.count_errors.output.hits.total.value }}"
+        total_errors: "{{ steps.count_errors.output.values[0][0] }}"
         mission_id: "NOVA-7"
       refresh: wait_for
