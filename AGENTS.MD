@@ -15,6 +15,15 @@ POST /api/agent_builder/tools
     // for esql:
     "query": "FROM logs-* | ...",
     "params": {}                  // REQUIRED even if empty
+    // for esql with parameters:
+    "query": "FROM logs,logs.* | WHERE body.text LIKE ?error_type | LIMIT 50",
+    "params": {
+      "error_type": {
+        "description": "Wildcard pattern, e.g. *FuelPressureException*",
+        "type": "string",
+        "optional": false
+      }
+    }
   }
 }
 ```
@@ -29,6 +38,34 @@ POST /api/agent_builder/tools
 - `esql` requires `configuration.params: {}` even when empty — returns 400 otherwise
 - `workflow` requires `configuration.workflow_id` — discover via `POST /api/workflows/search`
 - No `name` field on tools — use `id` and `description` only
+
+### Parameterized ES|QL Tools
+ES|QL tools support named parameters so the LLM only provides values, not query structure.
+
+**Parameter syntax in queries:**
+- `?param_name` — for **values** (strings, numbers). The LLM provides the value; it's substituted safely.
+- `??param_name` — for **identifiers** (field names, function names). Use when the LLM chooses which field to query.
+- Ref: https://www.elastic.co/docs/reference/query-languages/esql/esql-rest#esql-rest-params
+- Ref: https://github.com/elastic/elasticsearch/pull/122459 (double `??` for identifiers)
+
+**Parameter schema in `configuration.params`:**
+```json
+"params": {
+  "param_name": {
+    "description": "Shown to LLM as parameter description",
+    "type": "string",
+    "optional": false
+  }
+}
+```
+- `type`: `"string"` (other types TBD)
+- `optional`: `false` = required, `true` = optional
+- Agent Builder auto-generates a JSON Schema from params and exposes it to the LLM
+
+**CRITICAL: LIKE wildcards with parameters:**
+- `CONCAT("*", ?param, "*")` does NOT work — returns validation error
+- Instead use `LIKE ?param` and tell the LLM in the description to include wildcards: `"e.g. *FuelPressureException*"`
+- `== ?param` works directly for exact string matching (no wildcards needed)
 
 ### Updating Existing Tools (PUT)
 POST fails if the tool already exists. Use PUT to update:
@@ -747,5 +784,7 @@ POST /api/actions/connector
 26. **`elasticsearch.search` schema — `aggs`, `_source`, `sort`, `exists`, `match_phrase` all NOT allowed** — The workflow schema for `elasticsearch.search` steps only allows `index`, `size`, and `query` with basic query types (`match`, `term`, `range`, `bool`). Including `sort` → `Valid: false`. Including `match_phrase` → `Valid: false` (shows as "Untitled workflow"). Including `aggs` → validation warnings. Including `_source` → rejected. Including `exists` query → `Valid: false`. **Preferred workaround:** Use `elasticsearch.esql.query` with `KQL()` function instead — e.g. `FROM logs,logs.* | WHERE KQL("body.text: \"ErrorType\" AND severity_text: \"ERROR\"") | KEEP event_name`. For counts: `| STATS total = COUNT(*)`. Output format: `{columns: [...], values: [[...]]}` — access via `steps.X.output.values[row][col]`
 27. **`Elastic-Cloud-SMTP` system email connector** — Pre-configured email connector on Elastic Cloud serverless. Use `connector-id: Elastic-Cloud-SMTP` in email steps. Sends from `noreply@alerts.elastic.co`. Returns `{accepted: [...], rejected: [...], response: "250 2.0.0 Ok: queued"}`
 28. **Extracting callback_url from log `event_name`** — `event_name` is a top-level indexed `keyword` field (NOT a passthrough attribute). It contains a JSON string like `{"callback_url": "http://...", "user_email": "user@example.com"}`. Extract using ES|QL: `FROM logs,logs.* | WHERE KQL("body.text: \"ErrorType\"...") | KEEP event_name` → then `data.set` with `json_parse`: `${{ steps.search.output.values[1][0] | json_parse }}`. Access parsed fields via `steps.set_step.output.var[0].event_meta.callback_url`
+29. **Parameterized ES|QL tools — `?param` syntax** — Agent Builder `esql` tools support named parameters using ES|QL's native `?param_name` (for values) and `??param_name` (for identifiers/field names). Define params in `configuration.params` with `{description, type, optional}`. The Agent Builder auto-generates a JSON Schema from params for the LLM. **CRITICAL:** `CONCAT("*", ?param, "*")` does NOT pass validation — use `LIKE ?param` and instruct the LLM in the param description to include wildcards (e.g., `"Wrap in asterisks: *FuelPressureException*"`). `== ?param` works for exact string matching. Refs: https://www.elastic.co/docs/reference/query-languages/esql/esql-rest#esql-rest-params , https://github.com/elastic/elasticsearch/pull/122459
+30. **Prefer parameterized esql tools over `index_search` for logs** — `index_search` lets the LLM auto-generate ES|QL queries, which consistently fails: uses `message` instead of `body.text`, `FROM logs` instead of `FROM logs,logs.*`, `resource.attributes.service.name` instead of `service.name`, `MATCH()` instead of `LIKE`. Parameterized `esql` tools bake in correct field names and query patterns — the LLM only provides parameter values, eliminating 3-4 wasted tool calls per investigation
 29. **`elasticsearch.esql.query` step — preferred for text search in workflows** — Use `elasticsearch.esql.query` instead of `elasticsearch.search` when you need `match_phrase`, `sort`, or other schema-restricted features. Key patterns: (a) Use `FROM logs,logs.*` to include sub-streams. (b) Use `KQL()` function for text matching: `WHERE KQL("body.text: \"ErrorType\" AND severity_text: \"ERROR\"")`. (c) Output is `{columns: [{name, type}], values: [[row1], [row2]]}`. (d) Access values positionally: `steps.X.output.values[0][0]` for first row, first column. (e) Column order matches `KEEP` clause. (f) `format: json` is required in `with` block
 30. **Alert rule tags for workflow data passing** — Since `inputs.*` is blank in alert-triggered workflows, encode key data in alert rule tags. Example: `tags: ["nova7", "FuelPressureException"]` → access in workflow as `event.rule.tags[1]`. Keep tags minimal (prefix + error_type) for reliable array index access

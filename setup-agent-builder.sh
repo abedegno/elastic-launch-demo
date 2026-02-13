@@ -145,12 +145,19 @@ print(json.dumps({k: v for k, v in body.items() if k in ('description', 'configu
     fi
 }
 
-create_tool "search_telemetry_logs" '{
-  "id": "search_telemetry_logs",
-  "type": "index_search",
-  "description": "Search NOVA-7 telemetry logs for anomaly investigation. Searches the logs data stream which contains all OTLP telemetry. Supports filtering by error type (in body.text), sensor type, vehicle section, service name, severity, channel, and cloud provider. Primary investigation tool for root cause analysis.",
+create_tool "search_error_logs" '{
+  "id": "search_error_logs",
+  "type": "esql",
+  "description": "Search NOVA-7 telemetry logs for a specific error or exception type. Use this as the FIRST tool when investigating a known anomaly (e.g., FuelPressureException, GPSMultipathException). Returns the 50 most recent ERROR-level log entries matching the error type, including timestamps, log messages, service names, and event metadata. The error_type parameter is matched against body.text (the log message field).",
   "configuration": {
-    "pattern": "logs,logs.*"
+    "query": "FROM logs,logs.* | WHERE @timestamp > NOW() - 15 MINUTES AND body.text LIKE ?error_type AND severity_text == \"ERROR\" | KEEP @timestamp, body.text, service.name, severity_text, event_name | SORT @timestamp DESC | LIMIT 50",
+    "params": {
+      "error_type": {
+        "description": "Wildcard pattern for the error type. Wrap in asterisks, e.g. *FuelPressureException* or *GPSMultipathException*",
+        "type": "string",
+        "optional": false
+      }
+    }
   }
 }'
 
@@ -164,13 +171,19 @@ create_tool "search_subsystem_health" '{
   }
 }'
 
-create_tool "check_service_status" '{
-  "id": "check_service_status",
+create_tool "search_service_logs" '{
+  "id": "search_service_logs",
   "type": "esql",
-  "description": "Check operational status of individual NOVA-7 microservices. Returns error counts, warning counts, and log totals for each of the 9 services (fuel-system, navigation, comms-array, mission-control, range-safety, ground-systems, payload-monitor, sensor-validator, telemetry-relay). Log message field: body.text (never use 'body' alone).",
+  "description": "Search NOVA-7 telemetry logs for a specific service. Use this to investigate errors and warnings from a particular microservice (e.g., fuel-system, navigation, sensor-validator). Returns the 50 most recent ERROR and WARN log entries for the specified service, including timestamps, log messages, and severity levels.",
   "configuration": {
-    "query": "FROM logs,logs.* | WHERE @timestamp > NOW() - 15 MINUTES | STATS error_count = COUNT(*) WHERE severity_text == \"ERROR\", warn_count = COUNT(*) WHERE severity_text == \"WARN\", total = COUNT(*) BY service.name | SORT error_count DESC",
-    "params": {}
+    "query": "FROM logs,logs.* | WHERE @timestamp > NOW() - 15 MINUTES AND service.name == ?service_name AND severity_text IN (\"ERROR\", \"WARN\") | KEEP @timestamp, body.text, service.name, severity_text | SORT @timestamp DESC | LIMIT 50",
+    "params": {
+      "service_name": {
+        "description": "The service to investigate (fuel-system, navigation, comms-array, mission-control, range-safety, ground-systems, payload-monitor, sensor-validator, telemetry-relay)",
+        "type": "string",
+        "optional": false
+      }
+    }
   }
 }'
 
@@ -203,12 +216,12 @@ create_tool "launch_safety_assessment" '{
   }
 }'
 
-create_tool "esql_telemetry_query" '{
-  "id": "esql_telemetry_query",
+create_tool "browse_recent_errors" '{
+  "id": "browse_recent_errors",
   "type": "esql",
-  "description": "Run custom ES|QL queries against NOVA-7 telemetry logs for advanced analytics, threshold validation, and anomaly detection. CRITICAL: The log message column is body.text (NOT body — using 'body' alone causes Unknown column errors). Available fields: @timestamp, body.text (log message), severity_text (INFO/WARN/ERROR), service.name (9 services), log.level. Use body.text LIKE \"*ErrorType*\" to match specific error types. IMPORTANT: Always use FROM logs,logs.* to include all sub-streams. Example: FROM logs,logs.* | WHERE body.text LIKE \"*FuelPressureException*\" AND severity_text == \"ERROR\" | STATS count = COUNT(*)",
+  "description": "Browse all recent ERROR and WARN log entries across all NOVA-7 services. Use this for general situation awareness when you do not yet know the specific error type or service involved. Returns the 50 most recent error and warning log entries with timestamps, log messages, service names, and severity levels.",
   "configuration": {
-    "query": "FROM logs,logs.* | WHERE @timestamp > NOW() - 15 MINUTES | LIMIT 25",
+    "query": "FROM logs,logs.* | WHERE @timestamp > NOW() - 15 MINUTES AND severity_text IN (\"ERROR\", \"WARN\") | KEEP @timestamp, body.text, service.name, severity_text | SORT @timestamp DESC | LIMIT 50",
     "params": {}
   }
 }'
