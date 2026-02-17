@@ -46,8 +46,8 @@ class NetworkControllerService(BaseService):
 
         self.emit_log(
             "INFO",
-            f"Interface {iface}: in {in_octets} octets, out {out_octets} octets, "
-            f"errors {in_errors}, CRC {crc_errors}",
+            f"%LINEPROTO-5-UPDOWN: Line protocol on Interface {iface}, changed state to up "
+            f"in_octets={in_octets} out_octets={out_octets} in_errors={in_errors} crc_errors={crc_errors}",
             {
                 "operation": "interface_poll",
                 "network.interface": iface,
@@ -65,7 +65,7 @@ class NetworkControllerService(BaseService):
             self.emit_metric("network.bgp.peers_established", float(established), "peers")
             self.emit_log(
                 "INFO",
-                f"BGP session summary: {established}/{bgp_peers} peers Established",
+                f"%BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up, {established}/{bgp_peers} peers Established",
                 {
                     "operation": "bgp_check",
                     "bgp.total_peers": bgp_peers,
@@ -79,7 +79,8 @@ class NetworkControllerService(BaseService):
         self.emit_metric("network.stp.topology_changes", float(stp_changes), "changes")
         self.emit_log(
             "INFO",
-            f"Spanning-tree topology: {stp_changes} changes in last interval, root bridge stable",
+            f"%SPANTREE-6-PORT_STATE: VLAN0100 {iface} state -> forwarding, "
+            f"{stp_changes} topology changes this interval",
             {"operation": "stp_check", "stp.topology_changes": stp_changes},
         )
 
@@ -89,7 +90,7 @@ class NetworkControllerService(BaseService):
         self.emit_metric("network.mac_table.entries", float(mac_entries), "entries")
         self.emit_log(
             "INFO",
-            f"MAC address table: {mac_entries}/{mac_table_capacity} entries "
+            f"%SW_MATM-6-MACCOUNT: MAC address table entries {mac_entries}/{mac_table_capacity} "
             f"({round(mac_entries / mac_table_capacity * 100, 1)}% utilization)",
             {
                 "operation": "mac_table_check",

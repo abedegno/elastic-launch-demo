@@ -33,8 +33,8 @@ class DigitalMarketplaceService(BaseService):
 
         self.emit_log(
             "INFO",
-            f"Marketplace health: {active_users} active users, {transactions_per_sec} tps, "
-            f"conversion {cart_conversion}%, response {avg_response_ms}ms",
+            f"marketplace.health active_users={active_users} tps={transactions_per_sec} "
+            f"cart_conversion={cart_conversion}% response_ms={avg_response_ms}",
             {
                 "operation": "marketplace_health",
                 "marketplace.active_users": active_users,
@@ -48,6 +48,6 @@ class DigitalMarketplaceService(BaseService):
         catalog_items = random.randint(120000, 180000)
         self.emit_log(
             "INFO",
-            f"Product catalog sync nominal -- {catalog_items} items indexed",
+            f"marketplace.catalog_sync status=nominal items_indexed={catalog_items}",
             {"operation": "catalog_sync", "catalog.item_count": catalog_items},
         )

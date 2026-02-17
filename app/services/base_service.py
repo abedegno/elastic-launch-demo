@@ -273,10 +273,11 @@ class BaseService(ABC):
         ch = self._channel_registry.get(channel)
         if not ch:
             return
+        error_type = ch.get("error_type", "unknown")
         messages = [
-            f"Degraded readings detected from {ch['subsystem']} subsystem — possible upstream fault",
-            f"Anomalous data pattern from {ch['vehicle_section']} sensors, monitoring closely",
-            f"Health check shows elevated error rate in {ch['subsystem']} dependency",
+            f"Upstream dependency alert: {ch['subsystem']} reporting {error_type} — monitoring {ch['vehicle_section']} for cascade impact",
+            f"Anomalous telemetry from {ch['vehicle_section']}: correlated with {error_type} in {ch['subsystem']} subsystem",
+            f"Health check degraded: elevated error rate in {ch['subsystem']} dependency, see {error_type} for root cause",
         ]
         attrs = self._base_log_attrs()
         attrs.update(

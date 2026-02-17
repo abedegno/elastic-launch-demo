@@ -37,7 +37,8 @@ class WifiControllerService(BaseService):
 
             self.emit_log(
                 "INFO",
-                f"AP {ap}: {clients} clients, ch{channel}, signal {signal_dbm}dBm, noise {noise_dbm}dBm",
+                f"mist-event type=AP_STATS ap_name={ap} clients={clients} "
+                f"channel={channel} signal={signal_dbm}dBm noise={noise_dbm}dBm",
                 {
                     "operation": "ap_poll",
                     "wifi.ap_name": ap,
@@ -53,7 +54,8 @@ class WifiControllerService(BaseService):
         self.emit_metric("wifi.total_clients", float(total_clients), "clients")
         self.emit_log(
             "INFO",
-            f"WiFi controller health nominal -- {len(self.AP_NAMES)} APs online, {total_clients} total clients",
+            f"mist-event type=WLC_HEALTH aps_online={len(self.AP_NAMES)} "
+            f"total_clients={total_clients} status=nominal",
             {
                 "operation": "controller_health",
                 "wifi.ap_count": len(self.AP_NAMES),

@@ -982,6 +982,14 @@ Do NOT write custom ES|QL queries. Use the parameterized tools.
         cascade = ", ".join(ch_data.get("cascade_services", []))
         description = ch_data.get("description", "")
 
+        investigation_notes = ch_data.get("investigation_notes", "")
+        investigation_section = ""
+        if investigation_notes:
+            investigation_section = f"""
+## Vendor-Specific Investigation
+{investigation_notes}
+"""
+
         return f"""# Channel {ch_num}: {name}
 
 ## Error Signature
@@ -994,13 +1002,13 @@ Do NOT write custom ES|QL queries. Use the parameterized tools.
 {description}
 
 ## Investigation Procedure
-1. Search for `{error_type}` in recent ERROR logs using `search_error_logs`
+1. Search for `{error_type}` in recent ERROR logs using `search_error_logs` — this identifier appears in the log body (body.text)
 2. Check health of affected services: {affected}
 3. Trace anomaly propagation to cascade services: {cascade}
 4. Check for correlated errors in the same time window
-
+{investigation_section}
 ## Root Cause Indicators
-- Look for `{error_type}` entries in body.text
+- Look for `{error_type}` entries in body.text (this is the indexed field — do NOT search body alone)
 - Check if multiple channels in the {subsystem} subsystem are affected
 - Verify if errors correlate with infrastructure events
 

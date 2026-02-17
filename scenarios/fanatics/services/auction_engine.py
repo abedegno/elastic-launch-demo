@@ -33,8 +33,9 @@ class AuctionEngineService(BaseService):
 
         self.emit_log(
             "INFO",
-            f"Auction engine: {active_auctions} active auctions, {bids_per_min} bids/min, "
-            f"latency {bid_latency_ms}ms, {websocket_connections} WebSocket connections",
+            f"level=info ts=2025-01-15T14:32:01.234Z caller=auction.go:47 "
+            f'msg="health" active_auctions={active_auctions} bids_per_min={bids_per_min} '
+            f"latency_ms={bid_latency_ms} ws_connections={websocket_connections}",
             {
                 "operation": "auction_health",
                 "auction.active_count": active_auctions,
@@ -47,6 +48,7 @@ class AuctionEngineService(BaseService):
         # Bid processing summary
         self.emit_log(
             "INFO",
-            "Bid processing pipeline healthy -- all bid queues draining normally",
+            'level=info ts=2025-01-15T14:32:01.456Z caller=pipeline.go:112 msg="pipeline_check" '
+            "status=healthy queues_draining=true",
             {"operation": "pipeline_check", "check.result": "PASS"},
         )

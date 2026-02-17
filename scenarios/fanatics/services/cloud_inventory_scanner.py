@@ -34,8 +34,8 @@ class CloudInventoryScannerService(BaseService):
 
             self.emit_log(
                 "INFO",
-                f"Cloud scan [{provider.upper()}]: {resources_scanned} resources, "
-                f"{orphaned} orphaned, compliance {compliance_pct}%",
+                f"cloud-inventory-scan provider={provider} resources_scanned={resources_scanned} "
+                f"orphaned={orphaned} compliance={compliance_pct}%",
                 {
                     "operation": "cloud_scan",
                     "cloud_inventory.provider": provider,
@@ -51,7 +51,8 @@ class CloudInventoryScannerService(BaseService):
         self.emit_metric("cloud_inventory.vpn_tunnels_up", float(tunnels_up), "tunnels")
         self.emit_log(
             "INFO",
-            f"Cross-cloud VPN status: {tunnels_up}/{tunnel_count} tunnels up",
+            f"cloud-networking vpn-health tunnels_up={tunnels_up}/{tunnel_count} "
+            f"status={'nominal' if tunnels_up == tunnel_count else 'degraded'}",
             {
                 "operation": "vpn_health",
                 "vpn.tunnels_total": tunnel_count,

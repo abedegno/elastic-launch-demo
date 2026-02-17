@@ -37,8 +37,8 @@ class DnsDhcpService(BaseService):
         zone = random.choice(self.DNS_ZONES)
         self.emit_log(
             "INFO",
-            f"DNS health [{zone}]: {queries_per_sec} qps, cache hit {cache_hit_pct}%, "
-            f"NXDOMAIN {nxdomain_pct}%, latency {avg_latency_ms}ms",
+            f"named[12345]: info: zone '{zone}' queries={queries_per_sec}/s "
+            f"cache_hit={cache_hit_pct}% nxdomain={nxdomain_pct}% latency={avg_latency_ms}ms",
             {
                 "operation": "dns_health",
                 "dns.zone": zone,
@@ -59,8 +59,8 @@ class DnsDhcpService(BaseService):
 
         self.emit_log(
             "INFO",
-            f"DHCP scope {scope}: {active_leases}/{total_leases} leases active "
-            f"({round(active_leases / total_leases * 100, 1)}% utilization)",
+            f"dhcpd[6789]: info: pool {scope} active_leases={active_leases}/{total_leases} "
+            f"utilization={round(active_leases / total_leases * 100, 1)}%",
             {
                 "operation": "dhcp_health",
                 "dhcp.scope": scope,
@@ -72,6 +72,6 @@ class DnsDhcpService(BaseService):
         # DNS resolution check
         self.emit_log(
             "INFO",
-            "DNS resolver check: all upstream forwarders responding within SLA",
+            "named[12345]: info: resolver health check PASS — all upstream forwarders responding within SLA",
             {"operation": "resolver_check", "check.result": "PASS"},
         )

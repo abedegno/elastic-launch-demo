@@ -62,7 +62,7 @@ class CardPrintingSystemService(BaseService):
             self.emit_metric(sensor["metric"], value, sensor["unit"])
             self.emit_log(
                 "INFO",
-                f"{sensor['name']}: {value} {sensor['unit']} -- within nominal range",
+                f"[PrintController] INFO - {sensor_key}: {value} {sensor['unit']} status=NOMINAL",
                 {
                     "operation": "production_reading",
                     "sensor.name": sensor_key,
@@ -74,6 +74,6 @@ class CardPrintingSystemService(BaseService):
 
         self.emit_log(
             "INFO",
-            "Production line check complete -- all print systems nominal",
+            "[PrintController] INFO - production_line_check: all systems nominal throughput=156cards/min",
             {"operation": "system_check", "check.result": "PASS"},
         )

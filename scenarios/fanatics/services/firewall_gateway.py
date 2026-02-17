@@ -33,8 +33,9 @@ class FirewallGatewayService(BaseService):
 
         self.emit_log(
             "INFO",
-            f"Session table: {session_count}/{max_sessions} "
-            f"({round(session_count / max_sessions * 100, 1)}%), rate {session_rate}/s",
+            f"1,2025/01/15 14:32:01,PA-5260,SYSTEM,session,0,session-info,"
+            f"sessions={session_count}/{max_sessions} "
+            f"({round(session_count / max_sessions * 100, 1)}%) rate={session_rate}/s",
             {
                 "operation": "session_table",
                 "firewall.sessions": session_count,
@@ -51,7 +52,8 @@ class FirewallGatewayService(BaseService):
 
         self.emit_log(
             "INFO",
-            f"Threat prevention: {threats_blocked} threats blocked, {ssl_decrypted} SSL flows decrypted",
+            f"1,2025/01/15 14:32:01,PA-5260,THREAT,summary,0,threat-stats,"
+            f"threats_blocked={threats_blocked} ssl_decrypted={ssl_decrypted}",
             {
                 "operation": "threat_prevention",
                 "firewall.threats": threats_blocked,
@@ -67,7 +69,8 @@ class FirewallGatewayService(BaseService):
 
         self.emit_log(
             "INFO",
-            f"Firewall CPU: management plane {cpu_mgmt}%, data plane {cpu_dp}%",
+            f"1,2025/01/15 14:32:01,PA-5260,SYSTEM,general,0,resource-monitor,"
+            f"mgmt_cpu={cpu_mgmt}% dp_cpu={cpu_dp}%",
             {
                 "operation": "cpu_check",
                 "firewall.cpu_mgmt": cpu_mgmt,
@@ -80,7 +83,8 @@ class FirewallGatewayService(BaseService):
         self.emit_metric("firewall.cert_days_remaining", float(cert_days_remaining), "days")
         self.emit_log(
             "INFO",
-            f"SSL inspection certificate: {cert_days_remaining} days until expiry",
+            f"1,2025/01/15 14:32:01,PA-5260,SYSTEM,general,0,cert-status,"
+            f"ssl_inspect_cert days_remaining={cert_days_remaining}",
             {
                 "operation": "cert_check",
                 "firewall.cert_expiry_days": cert_days_remaining,

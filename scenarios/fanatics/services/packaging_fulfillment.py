@@ -33,8 +33,8 @@ class PackagingFulfillmentService(BaseService):
 
         self.emit_log(
             "INFO",
-            f"Fulfillment center: {orders_pending} pending, {labels_printed} labels printed, "
-            f"scan accuracy {scan_accuracy}%, pick rate {pick_rate}/hr",
+            f"wms.fulfillment orders_pending={orders_pending} labels_printed={labels_printed} "
+            f"scan_accuracy={scan_accuracy}% pick_rate={pick_rate}/hr",
             {
                 "operation": "fulfillment_health",
                 "fulfillment.pending": orders_pending,
@@ -47,6 +47,6 @@ class PackagingFulfillmentService(BaseService):
         # Scanner sync status
         self.emit_log(
             "INFO",
-            "Warehouse barcode scanners synced -- all readers reporting nominal",
+            "wms.scanner_sync status=nominal all_readers=synced",
             {"operation": "scanner_sync", "check.result": "PASS"},
         )

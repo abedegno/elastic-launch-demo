@@ -126,521 +126,569 @@ class FanaticsScenario(BaseScenario):
                 "name": "MAC Address Flapping",
                 "subsystem": "network_core",
                 "vehicle_section": "switching_fabric",
-                "error_type": "MACFlapException",
+                "error_type": "SW_MATM-4-MACFLAP_NOTIF",
                 "sensor_type": "mac_table",
                 "affected_services": ["network-controller", "dns-dhcp-service"],
                 "cascade_services": ["firewall-gateway", "wifi-controller"],
                 "description": "MAC address table instability causing port flapping on the switching fabric",
                 "error_message": (
-                    "MAC flap detected: address {mac_address} flapping between "
-                    "ports {interface_src} and {interface_dst} on VLAN {vlan_id}, "
+                    "%SW_MATM-4-MACFLAP_NOTIF: Host {mac_address} in vlan {vlan_id} "
+                    "is flapping between port {interface_src} and port {interface_dst}, "
                     "{flap_count} moves in {flap_window}s"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "network_core/mac_manager.py", line 412, in process_mac_notification\n'
-                    "    entry = self._cam_table.lookup(mac_addr, vlan)\n"
-                    '  File "network_core/mac_manager.py", line 378, in _detect_flapping\n'
-                    "    if move_count > self.FLAP_THRESHOLD:\n"
-                    '  File "network_core/mac_manager.py", line 385, in _detect_flapping\n'
-                    '    raise MACFlapException(f"MAC {mac_addr} flapping on VLAN {vlan}: {move_count} moves")\n'
-                    "MACFlapException: MAC {mac_address} flapping between {interface_src} and {interface_dst} on VLAN {vlan_id}"
+                    "switch# show mac address-table notification mac-move\n"
+                    "MAC Move Notification Feature is Enabled on the switch\n"
+                    "VLAN  MAC Address       From Port          To Port            Move Count\n"
+                    "----  ----------------  -----------------  -----------------  ----------\n"
+                    "{vlan_id}   {mac_address}     {interface_src}         {interface_dst}         {flap_count}\n"
+                    "\n"
+                    "switch# show mac address-table count\n"
+                    "Total MAC Addresses for this criterion: 3847\n"
+                    "Multicast MAC Addresses:                12\n"
+                    "Unicast MAC Addresses:                  3835\n"
+                    "Total MAC Addresses in Use:             3847"
                 ),
             },
             2: {
                 "name": "Spanning Tree Topology Change",
                 "subsystem": "network_core",
                 "vehicle_section": "switching_fabric",
-                "error_type": "STPTopologyChangeException",
+                "error_type": "SPANTREE-2-TOPO_CHANGE",
                 "sensor_type": "stp_state",
                 "affected_services": ["network-controller", "firewall-gateway"],
                 "cascade_services": ["dns-dhcp-service", "wifi-controller"],
                 "description": "Rapid spanning tree topology changes destabilizing Layer 2 forwarding",
                 "error_message": (
-                    "STP topology change storm: VLAN {vlan_id} instance {stp_instance} received "
-                    "{tc_count} TCN BPDUs in {tc_window}s from bridge {bridge_id} via {interface}"
+                    "%SPANTREE-2-TOPO_CHANGE: Topology Change received on VLAN {vlan_id} "
+                    "instance {stp_instance} from bridge {bridge_id} via port {interface}, "
+                    "{tc_count} TCN BPDUs in {tc_window}s"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "network_core/stp_engine.py", line 267, in process_bpdu\n'
-                    "    self._handle_topology_change(vlan, instance, bpdu)\n"
-                    '  File "network_core/stp_engine.py", line 234, in _handle_topology_change\n'
-                    "    if tc_count > self.TC_STORM_THRESHOLD:\n"
-                    '  File "network_core/stp_engine.py", line 241, in _handle_topology_change\n'
-                    '    raise STPTopologyChangeException(f"TC storm on VLAN {vlan}: {tc_count} TCNs in {window}s")\n'
-                    "STPTopologyChangeException: TC storm on VLAN {vlan_id}, {tc_count} TCNs from bridge {bridge_id}"
+                    "switch# show spanning-tree vlan {vlan_id} detail\n"
+                    "VLAN{vlan_id} is executing the rstp compatible Spanning Tree protocol\n"
+                    "  Bridge Identifier has priority 32768, address {bridge_id}\n"
+                    "  Topology change flag set, detected flag set\n"
+                    "  Number of topology changes {tc_count}\n"
+                    "  Last change occurred on port {interface}\n"
+                    "  Times: hello 2, max age 20, forward delay 15, topology change {tc_window}\n"
+                    "  Port {interface} of VLAN{vlan_id} is designated forwarding\n"
+                    "    Port cost 4, Port priority 128, Port Identifier 128.1\n"
+                    "    Number of transitions to forwarding state: {tc_count}"
                 ),
             },
             3: {
                 "name": "BGP Peer Flapping",
                 "subsystem": "network_core",
                 "vehicle_section": "routing_engine",
-                "error_type": "BGPPeerFlapException",
+                "error_type": "BGP-3-NOTIFICATION",
                 "sensor_type": "bgp_session",
                 "affected_services": ["network-controller", "firewall-gateway"],
                 "cascade_services": ["dns-dhcp-service", "cloud-inventory-scanner"],
                 "description": "BGP peering session repeatedly transitioning between Established and Idle states",
                 "error_message": (
-                    "BGP peer flapping: neighbor {bgp_peer_ip} AS {bgp_peer_as} "
-                    "transitioned {bgp_flap_count} times in {bgp_flap_window}s, "
-                    "last state {bgp_last_state}, notification: {bgp_notification}"
+                    "%BGP-3-NOTIFICATION: Neighbor {bgp_peer_ip} (AS {bgp_peer_as}) "
+                    "sent NOTIFICATION {bgp_notification}, {bgp_flap_count} transitions "
+                    "in {bgp_flap_window}s, last state {bgp_last_state}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "network_core/bgp_fsm.py", line 523, in handle_state_change\n'
-                    "    self._check_flap_dampening(neighbor, new_state)\n"
-                    '  File "network_core/bgp_fsm.py", line 489, in _check_flap_dampening\n'
-                    "    penalty = self._calculate_penalty(flap_count, window)\n"
-                    '  File "network_core/bgp_fsm.py", line 502, in _check_flap_dampening\n'
-                    '    raise BGPPeerFlapException(f"Peer {neighbor} flapping: {flap_count} transitions, penalty {penalty}")\n'
-                    "BGPPeerFlapException: Peer {bgp_peer_ip} AS{bgp_peer_as} flap count {bgp_flap_count} exceeds dampening threshold"
+                    "router# show bgp neighbors {bgp_peer_ip}\n"
+                    "BGP neighbor is {bgp_peer_ip}, remote AS {bgp_peer_as}, external link\n"
+                    "  BGP state = {bgp_last_state}, up for 00:00:03\n"
+                    "  Last read 00:00:03, Last write 00:00:08\n"
+                    "  Hold time is 180, keepalive interval is 60 seconds\n"
+                    "  Neighbor sessions: 1 active\n"
+                    "  Notification received: {bgp_notification}\n"
+                    "  Flap count: {bgp_flap_count} in {bgp_flap_window}s\n"
+                    "    Opens:           Sent 12   Rcvd 9\n"
+                    "    Notifications:   Sent 0    Rcvd {bgp_flap_count}\n"
+                    "    Updates:         Sent 245  Rcvd 0\n"
+                    "    Keepalives:      Sent 1024 Rcvd 891"
                 ),
             },
             4: {
                 "name": "Firewall Session Table Exhaustion",
                 "subsystem": "security",
                 "vehicle_section": "perimeter_defense",
-                "error_type": "SessionExhaustionException",
+                "error_type": "SYSTEM-session-threshold",
                 "sensor_type": "session_table",
                 "affected_services": ["firewall-gateway", "network-controller"],
                 "cascade_services": ["digital-marketplace", "auction-engine"],
                 "description": "Firewall session table approaching maximum capacity, new connections being dropped",
                 "error_message": (
-                    "Session table exhaustion: {session_count}/{session_max} sessions "
-                    "({session_util_pct}% utilization), {session_drops} new connections dropped "
-                    "in zone {fw_zone}, top source {top_source_ip}"
+                    "1,2025/01/15 14:32:01,007200001234,SYSTEM,session,0,"
+                    "SYSTEM-session-threshold,Session table utilization critical: "
+                    "{session_count}/{session_max} ({session_util_pct}%) in zone {fw_zone}, "
+                    "{session_drops} new connections dropped, top source {top_source_ip}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "security/session_manager.py", line 345, in allocate_session\n'
-                    "    if self._table.size() >= self._max_sessions:\n"
-                    '  File "security/session_manager.py", line 351, in allocate_session\n'
-                    "    self._drop_counter.increment(zone)\n"
-                    '  File "security/session_manager.py", line 358, in allocate_session\n'
-                    '    raise SessionExhaustionException(f"Session table full: {current}/{max_s}, zone {zone}")\n'
-                    "SessionExhaustionException: Session table at {session_util_pct}% capacity, dropping connections in {fw_zone}"
+                    "> show session info\n"
+                    "Number of sessions supported:    {session_max}\n"
+                    "Number of active sessions:       {session_count}\n"
+                    "Session table utilization:       {session_util_pct}%\n"
+                    "Number of sessions dropped:      {session_drops}\n"
+                    "  Zone: {fw_zone}\n"
+                    "  Top source: {top_source_ip}\n"
+                    "TCP sessions:    {session_count}\n"
+                    "UDP sessions:    1245\n"
+                    "ICMP sessions:   89\n"
+                    "Session aging:   TCP default timeout 3600s"
                 ),
             },
             5: {
                 "name": "Firewall CPU Overload",
                 "subsystem": "security",
                 "vehicle_section": "perimeter_defense",
-                "error_type": "FirewallCPUException",
+                "error_type": "SYSTEM-cpu-critical",
                 "sensor_type": "cpu_utilization",
                 "affected_services": ["firewall-gateway", "network-controller"],
                 "cascade_services": ["dns-dhcp-service", "digital-marketplace"],
                 "description": "Firewall data plane CPU exceeding safe operating threshold",
                 "error_message": (
-                    "Firewall CPU overload: data plane {fw_dp_cpu_pct}% (threshold {fw_cpu_threshold}%), "
-                    "management plane {fw_mgmt_cpu_pct}%, "
-                    "packet buffer utilization {fw_buffer_pct}%, "
-                    "active policy rules {fw_policy_count}"
+                    "1,2025/01/15 14:32:01,007200001234,SYSTEM,general,0,"
+                    "SYSTEM-cpu-critical,Data plane CPU at {fw_dp_cpu_pct}% "
+                    "(threshold {fw_cpu_threshold}%), management plane {fw_mgmt_cpu_pct}%, "
+                    "packet buffer {fw_buffer_pct}%, active rules {fw_policy_count}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "security/health_monitor.py", line 278, in check_cpu_utilization\n'
-                    "    dp_cpu = self._read_dp_cpu_stats()\n"
-                    '  File "security/health_monitor.py", line 256, in _read_dp_cpu_stats\n'
-                    "    if dp_cpu > self.CPU_CRITICAL_THRESHOLD:\n"
-                    '  File "security/health_monitor.py", line 263, in _read_dp_cpu_stats\n'
-                    '    raise FirewallCPUException(f"Data plane CPU at {dp_cpu}%, threshold {threshold}%")\n'
-                    "FirewallCPUException: Data plane CPU {fw_dp_cpu_pct}% exceeds threshold {fw_cpu_threshold}%"
+                    "> show running resource-monitor\n"
+                    "Resource utilization (observed over last 60 seconds):\n"
+                    "  Data Plane CPU Utilization:\n"
+                    "    DP-0:  {fw_dp_cpu_pct}%  (threshold: {fw_cpu_threshold}%)\n"
+                    "    DP-1:  {fw_dp_cpu_pct}%\n"
+                    "  Management Plane CPU: {fw_mgmt_cpu_pct}%\n"
+                    "  Packet Buffer:        {fw_buffer_pct}%\n"
+                    "  Active Security Rules: {fw_policy_count}\n"
+                    "  Session Rate:          8,452 sessions/sec\n"
+                    "  Throughput:            4.2 Gbps\n"
+                    "  Packet Rate:           892,341 pps"
                 ),
             },
             6: {
                 "name": "SSL Decryption Certificate Expiry",
                 "subsystem": "security",
                 "vehicle_section": "ssl_inspection",
-                "error_type": "CertExpiryException",
+                "error_type": "SYSTEM-cert-expire",
                 "sensor_type": "certificate",
                 "affected_services": ["firewall-gateway", "dns-dhcp-service"],
                 "cascade_services": ["digital-marketplace", "auction-engine"],
                 "description": "SSL decryption forward proxy certificate expiring or expired, breaking TLS inspection",
                 "error_message": (
-                    "SSL certificate expiry: certificate '{cert_cn}' (serial {cert_serial}) "
-                    "expires in {cert_days_remaining} days, used by {cert_profile} decryption profile, "
+                    "1,2025/01/15 14:32:01,007200001234,SYSTEM,general,0,"
+                    "SYSTEM-cert-expire,Certificate '{cert_cn}' (serial {cert_serial}) "
+                    "expires in {cert_days_remaining} days, decryption profile {cert_profile}, "
                     "affecting {cert_affected_rules} policy rules"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "security/cert_manager.py", line 189, in validate_certificates\n'
-                    "    days_remaining = (cert.not_after - datetime.utcnow()).days\n"
-                    '  File "security/cert_manager.py", line 195, in validate_certificates\n'
-                    "    if days_remaining <= self.EXPIRY_WARNING_DAYS:\n"
-                    '  File "security/cert_manager.py", line 201, in validate_certificates\n'
-                    '    raise CertExpiryException(f"Certificate {cn} expires in {days_remaining}d")\n'
-                    "CertExpiryException: Certificate '{cert_cn}' serial {cert_serial} expiring in {cert_days_remaining} days"
+                    "> show system certificate detail\n"
+                    "Certificate '{cert_cn}'\n"
+                    "  Serial Number: {cert_serial}\n"
+                    "  Issuer: CN=Fanatics-Internal-CA,O=Fanatics Inc\n"
+                    "  Subject: CN={cert_cn}\n"
+                    "  Not Before: Jan 15 00:00:00 2024 GMT\n"
+                    "  Not After:  Jan 18 00:00:00 2025 GMT\n"
+                    "  Days Remaining: {cert_days_remaining}\n"
+                    "  Key Size: 2048\n"
+                    "  Used by decryption profile: {cert_profile}\n"
+                    "  Policy rules referencing: {cert_affected_rules}\n"
+                    "  Status: EXPIRING"
                 ),
             },
             7: {
                 "name": "WiFi AP Disconnect Storm",
                 "subsystem": "network_access",
                 "vehicle_section": "wireless_lan",
-                "error_type": "APDisconnectException",
+                "error_type": "AP_DISCONNECTED",
                 "sensor_type": "ap_status",
                 "affected_services": ["wifi-controller", "network-controller"],
                 "cascade_services": ["packaging-fulfillment", "card-printing-system"],
                 "description": "Multiple wireless access points simultaneously losing connectivity to the controller",
                 "error_message": (
-                    "AP disconnect storm: {ap_disconnect_count} APs lost connectivity in {ap_disconnect_window}s, "
-                    "affected APs include {ap_name} (site {ap_site}), "
+                    "AP_DISCONNECTED event_id=mist-evt-{ap_disconnect_count}: "
+                    "{ap_disconnect_count} APs lost connectivity in {ap_disconnect_window}s, "
+                    "including {ap_name} (site {ap_site}), "
                     "last CAPWAP heartbeat {ap_last_heartbeat}s ago"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "network_access/wlc_manager.py", line 334, in monitor_ap_health\n'
-                    "    heartbeat_age = time.time() - ap.last_heartbeat\n"
-                    '  File "network_access/wlc_manager.py", line 341, in monitor_ap_health\n'
-                    "    if heartbeat_age > self.HEARTBEAT_TIMEOUT:\n"
-                    '  File "network_access/wlc_manager.py", line 348, in monitor_ap_health\n'
-                    '    raise APDisconnectException(f"AP {ap_name} heartbeat timeout after {heartbeat_age}s")\n'
-                    "APDisconnectException: {ap_disconnect_count} APs disconnected, including {ap_name} at site {ap_site}"
+                    '{{"type": "AP_DISCONNECTED", "event_id": "mist-evt-{ap_disconnect_count}", '
+                    '"org_id": "fanatics-org-001", "site_id": "{ap_site}", '
+                    '"ap_name": "{ap_name}", "ap_mac": "5c:5b:35:a1:b2:c3", '
+                    '"timestamp": 1705329121, "duration": {ap_disconnect_window}, '
+                    '"count": {ap_disconnect_count}, "last_seen": {ap_last_heartbeat}, '
+                    '"reason": "CAPWAP heartbeat timeout", "firmware": "0.14.29313"}}'
                 ),
             },
             8: {
                 "name": "WiFi Channel Interference",
                 "subsystem": "network_access",
                 "vehicle_section": "wireless_lan",
-                "error_type": "ChannelInterferenceException",
+                "error_type": "INTERFERENCE_DETECTED",
                 "sensor_type": "rf_spectrum",
                 "affected_services": ["wifi-controller", "network-controller"],
                 "cascade_services": ["packaging-fulfillment"],
                 "description": "Co-channel and adjacent-channel interference degrading wireless performance",
                 "error_message": (
-                    "Channel interference: AP {ap_name} on channel {channel_number} "
-                    "detecting {interference_pct}% co-channel interference, "
-                    "noise floor {noise_floor_dbm}dBm, "
-                    "client retransmit rate {retransmit_pct}%, "
-                    "neighboring AP count {neighbor_ap_count}"
+                    "INTERFERENCE_DETECTED event_id=mist-rf-{channel_number}: "
+                    "ap_name={ap_name} channel={channel_number} "
+                    "co_channel_interference={interference_pct}% "
+                    "noise_floor={noise_floor_dbm}dBm "
+                    "retransmit_rate={retransmit_pct}% "
+                    "neighbor_aps={neighbor_ap_count}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "network_access/rf_manager.py", line 223, in analyze_spectrum\n'
-                    "    interference = self._measure_cci(ap, channel)\n"
-                    '  File "network_access/rf_manager.py", line 198, in _measure_cci\n'
-                    "    if interference_pct > self.CCI_THRESHOLD:\n"
-                    '  File "network_access/rf_manager.py", line 205, in _measure_cci\n'
-                    '    raise ChannelInterferenceException(f"CCI {interference_pct}% on ch{channel} at {ap_name}")\n'
-                    "ChannelInterferenceException: {interference_pct}% co-channel interference on channel {channel_number} at {ap_name}"
+                    '{{"type": "INTERFERENCE_DETECTED", "event_id": "mist-rf-{channel_number}", '
+                    '"ap_name": "{ap_name}", "band": "5GHz", "channel": {channel_number}, '
+                    '"bandwidth": 40, "co_channel_interference": {interference_pct}, '
+                    '"adjacent_channel_interference": 8.2, "noise_floor": {noise_floor_dbm}, '
+                    '"retransmit_rate": {retransmit_pct}, "neighbor_aps": {neighbor_ap_count}, '
+                    '"recommended_channel": 36, "rrm_action": "pending"}}'
                 ),
             },
             9: {
                 "name": "Client Authentication Storm",
                 "subsystem": "network_access",
                 "vehicle_section": "wireless_auth",
-                "error_type": "AuthStormException",
+                "error_type": "AUTH_FAILURE_STORM",
                 "sensor_type": "radius_auth",
                 "affected_services": ["wifi-controller", "dns-dhcp-service"],
                 "cascade_services": ["network-controller"],
                 "description": "RADIUS authentication requests spiking beyond server capacity",
                 "error_message": (
-                    "Authentication storm: {auth_requests_per_sec} RADIUS requests/sec "
-                    "(threshold {auth_threshold}/s), "
-                    "{auth_failures} failures, {auth_timeouts} timeouts, "
-                    "NAS {radius_nas_ip}, server {radius_server}"
+                    "AUTH_FAILURE_STORM event_id=mist-auth-storm: "
+                    "rate={auth_requests_per_sec}/s (threshold {auth_threshold}/s), "
+                    "failures={auth_failures} timeouts={auth_timeouts} "
+                    "nas={radius_nas_ip} server={radius_server}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "network_access/radius_handler.py", line 289, in process_auth_request\n'
-                    "    rate = self._auth_rate_counter.get_rate()\n"
-                    '  File "network_access/radius_handler.py", line 267, in process_auth_request\n'
-                    "    if rate > self.AUTH_STORM_THRESHOLD:\n"
-                    '  File "network_access/radius_handler.py", line 274, in process_auth_request\n'
-                    '    raise AuthStormException(f"Auth rate {rate}/s exceeds threshold {threshold}/s")\n'
-                    "AuthStormException: {auth_requests_per_sec} auth/s from NAS {radius_nas_ip}, {auth_failures} failures"
+                    '{{"type": "AUTH_FAILURE_STORM", "event_id": "mist-auth-storm", '
+                    '"org_id": "fanatics-org-001", "nas_ip": "{radius_nas_ip}", '
+                    '"radius_server": "{radius_server}", "auth_rate": {auth_requests_per_sec}, '
+                    '"threshold": {auth_threshold}, "failures": {auth_failures}, '
+                    '"timeouts": {auth_timeouts}, "eap_type": "PEAP-MSCHAPv2", '
+                    '"ssid": "Fanatics-Corp", '
+                    '"reason_codes": ["timeout", "reject", "invalid_credential"]}}'
                 ),
             },
             10: {
                 "name": "DNS Resolution Failure Over VPN",
                 "subsystem": "network_services",
                 "vehicle_section": "name_resolution",
-                "error_type": "DNSResolutionException",
+                "error_type": "NAMED-SERVFAIL-FORWARDER",
                 "sensor_type": "dns_query",
                 "affected_services": ["dns-dhcp-service", "network-controller"],
                 "cascade_services": ["digital-marketplace", "auction-engine", "cloud-inventory-scanner"],
                 "description": "DNS queries traversing VPN tunnel failing to resolve internal records",
                 "error_message": (
-                    "DNS resolution failure: query '{dns_query_name}' type {dns_query_type} "
-                    "via VPN tunnel {vpn_tunnel_name} returned {dns_rcode}, "
-                    "upstream forwarder {dns_forwarder_ip} unreachable, "
-                    "fallback forwarder {dns_fallback_ip} timeout after {dns_timeout_ms}ms"
+                    "named[12345]: NAMED-SERVFAIL-FORWARDER: query '{dns_query_name}' "
+                    "type {dns_query_type} via tunnel {vpn_tunnel_name}: "
+                    "forwarder {dns_forwarder_ip} unreachable, fallback {dns_fallback_ip} "
+                    "timeout after {dns_timeout_ms}ms, returning {dns_rcode}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "network_services/dns_resolver.py", line 312, in resolve_query\n'
-                    "    response = self._forward_via_vpn(query, tunnel)\n"
-                    '  File "network_services/dns_resolver.py", line 289, in _forward_via_vpn\n'
-                    "    raise socket.timeout(f'Forwarder {forwarder} timeout after {timeout}ms')\n"
-                    '  File "network_services/dns_resolver.py", line 296, in _forward_via_vpn\n'
-                    '    raise DNSResolutionException(f"Cannot resolve {qname} ({qtype}) via {tunnel}")\n'
-                    "DNSResolutionException: Failed to resolve '{dns_query_name}' ({dns_query_type}) via tunnel {vpn_tunnel_name}"
+                    "named[12345]: debug: query '{dns_query_name}' IN {dns_query_type} +E(0)\n"
+                    "named[12345]: debug: forwarding query to {dns_forwarder_ip} via {vpn_tunnel_name}\n"
+                    "named[12345]: debug: send: no response from {dns_forwarder_ip}#53\n"
+                    "named[12345]: debug: trying fallback forwarder {dns_fallback_ip}\n"
+                    "named[12345]: debug: receive: timeout from {dns_fallback_ip}#53 after {dns_timeout_ms}ms\n"
+                    "named[12345]: error: NAMED-SERVFAIL-FORWARDER: all forwarders unreachable for '{dns_query_name}'\n"
+                    "named[12345]: debug: query failed (SERVFAIL) '{dns_query_name}/{dns_query_type}/IN': all forwarders failed"
                 ),
             },
             11: {
                 "name": "DHCP Lease Storm",
                 "subsystem": "network_services",
                 "vehicle_section": "address_management",
-                "error_type": "DHCPLeaseStormException",
+                "error_type": "DHCPD-LEASE-EXHAUSTION",
                 "sensor_type": "dhcp_lease",
                 "affected_services": ["dns-dhcp-service", "network-controller"],
                 "cascade_services": ["wifi-controller", "packaging-fulfillment"],
                 "description": "DHCP scope exhaustion from excessive DISCOVER/REQUEST rate",
                 "error_message": (
-                    "DHCP lease storm: scope {dhcp_scope} at {dhcp_util_pct}% utilization "
+                    "dhcpd[6789]: DHCPD-LEASE-EXHAUSTION: pool {dhcp_scope} at {dhcp_util_pct}% "
                     "({dhcp_active_leases}/{dhcp_total_leases} leases), "
-                    "{dhcp_discover_rate} DISCOVER/s, {dhcp_nak_count} NAKs sent, "
-                    "rogue DHCP detected from {dhcp_rogue_ip}"
+                    "DISCOVER rate {dhcp_discover_rate}/s, {dhcp_nak_count} NAKs, "
+                    "rogue server detected at {dhcp_rogue_ip}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "network_services/dhcp_server.py", line 234, in handle_discover\n'
-                    "    lease = self._pool.allocate(scope, mac_addr)\n"
-                    '  File "network_services/dhcp_server.py", line 212, in _pool_allocate\n'
-                    "    if pool.utilization() > self.STORM_THRESHOLD:\n"
-                    '  File "network_services/dhcp_server.py", line 219, in _pool_allocate\n'
-                    '    raise DHCPLeaseStormException(f"Scope {scope} at {util}%, discover rate {rate}/s")\n'
-                    "DHCPLeaseStormException: Scope {dhcp_scope} exhaustion at {dhcp_util_pct}%, {dhcp_discover_rate} DISCOVER/s"
+                    "dhcpd[6789]: info: DHCPDISCOVER from 00:11:22:33:44:55 via eth0\n"
+                    "dhcpd[6789]: info: pool {dhcp_scope}: {dhcp_active_leases} of {dhcp_total_leases} leases active ({dhcp_util_pct}%)\n"
+                    "dhcpd[6789]: warning: DHCPD-LEASE-EXHAUSTION: pool near capacity\n"
+                    "dhcpd[6789]: warning: {dhcp_discover_rate} DHCPDISCOVER packets/sec (storm threshold: 50/s)\n"
+                    "dhcpd[6789]: warning: {dhcp_nak_count} DHCPNAK sent — no available leases\n"
+                    "dhcpd[6789]: alert: rogue DHCP server detected: {dhcp_rogue_ip} offering leases on {dhcp_scope}\n"
+                    "dhcpd[6789]: info: lease pool statistics: free=0, backup=0, expired=3, abandoned=2"
                 ),
             },
             12: {
                 "name": "Auction Bid Latency Spike",
                 "subsystem": "commerce",
                 "vehicle_section": "bidding_platform",
-                "error_type": "BidLatencyException",
+                "error_type": "BID_LATENCY_SLA_BREACH",
                 "sensor_type": "bid_processing",
                 "affected_services": ["auction-engine", "digital-marketplace"],
                 "cascade_services": ["network-controller", "firewall-gateway"],
                 "description": "Real-time bid processing latency exceeding SLA thresholds",
                 "error_message": (
-                    "Bid latency spike: auction {auction_id} bid {bid_id} "
-                    "processing latency {bid_latency_ms}ms (SLA {bid_sla_ms}ms), "
-                    "queue depth {bid_queue_depth}, "
-                    "websocket broadcast delay {ws_delay_ms}ms, "
-                    "affected bidders {affected_bidders}"
+                    'level=error ts=2025-01-15T14:32:01.234Z caller=bid_processor.go:289 '
+                    'msg="BID_LATENCY_SLA_BREACH" auction={auction_id} bid={bid_id} '
+                    "latency_ms={bid_latency_ms} sla_ms={bid_sla_ms} "
+                    "queue_depth={bid_queue_depth} ws_delay_ms={ws_delay_ms} "
+                    "affected_bidders={affected_bidders}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "commerce/bid_processor.py", line 289, in process_bid\n'
-                    "    elapsed = time.monotonic() - start\n"
-                    '  File "commerce/bid_processor.py", line 295, in process_bid\n'
-                    "    if elapsed_ms > self.BID_SLA_MS:\n"
-                    '  File "commerce/bid_processor.py", line 301, in process_bid\n'
-                    '    raise BidLatencyException(f"Bid {bid_id} took {elapsed_ms}ms, SLA {sla}ms")\n'
-                    "BidLatencyException: Bid {bid_id} on auction {auction_id} latency {bid_latency_ms}ms exceeds SLA {bid_sla_ms}ms"
+                    "goroutine 847 [running]:\n"
+                    "runtime/debug.Stack()\n"
+                    "\t/usr/local/go/src/runtime/debug/stack.go:24 +0x5e\n"
+                    "github.com/fanatics/auction-engine/internal/processor.(*BidProcessor).ProcessBid(0xc000518000, "
+                    "{{0xc000a12480, 0x24}}, {{0xc000a124c0, 0x26}}, 0x{bid_latency_ms})\n"
+                    "\t/app/internal/processor/bid_processor.go:289 +0x3a2\n"
+                    "github.com/fanatics/auction-engine/internal/processor.(*BidProcessor).handleBidQueue(0xc000518000)\n"
+                    "\t/app/internal/processor/bid_processor.go:145 +0x1b8\n"
+                    "github.com/fanatics/auction-engine/internal/ws.(*Hub).broadcastBidUpdate(0xc000420000, "
+                    "{{0xc000a12480, 0x24}})\n"
+                    "\t/app/internal/ws/hub.go:89 +0x204\n"
+                    "created by github.com/fanatics/auction-engine/cmd/server.Run in goroutine 1\n"
+                    "\t/app/cmd/server/main.go:67 +0x2a5"
                 ),
             },
             13: {
                 "name": "Payment Processing Timeout",
                 "subsystem": "commerce",
                 "vehicle_section": "payment_system",
-                "error_type": "PaymentTimeoutException",
+                "error_type": "PAYMENT_GATEWAY_TIMEOUT",
                 "sensor_type": "payment_gateway",
                 "affected_services": ["digital-marketplace", "auction-engine"],
                 "cascade_services": ["firewall-gateway"],
                 "description": "Payment gateway requests timing out, affecting checkout and auction settlements",
                 "error_message": (
-                    "Payment timeout: order {order_id} payment via {payment_provider} "
-                    "timed out after {payment_timeout_ms}ms, "
-                    "gateway response code {gateway_response_code}, "
-                    "retry {payment_retry_count}/{payment_max_retries}, "
-                    "amount ${payment_amount}"
+                    "[PaymentHandler] PAYMENT_GATEWAY_TIMEOUT: order={order_id} "
+                    "provider={payment_provider} timeout={payment_timeout_ms}ms "
+                    "gateway_code={gateway_response_code} "
+                    "retry={payment_retry_count}/{payment_max_retries} "
+                    "amount=${payment_amount}"
                 ),
                 "stack_trace": (
                     "Traceback (most recent call last):\n"
-                    '  File "commerce/payment_handler.py", line 178, in process_payment\n'
-                    "    response = self._gateway.charge(order_id, amount, provider)\n"
-                    '  File "commerce/payment_handler.py", line 156, in _gateway_charge\n'
-                    "    raise requests.exceptions.ReadTimeout(f'Gateway timeout after {timeout}ms')\n"
-                    '  File "commerce/payment_handler.py", line 163, in _gateway_charge\n'
-                    '    raise PaymentTimeoutException(f"Payment for order {order_id} timed out via {provider}")\n'
-                    "PaymentTimeoutException: Order {order_id} payment via {payment_provider} timeout after {payment_timeout_ms}ms"
+                    '  File "/app/marketplace/handlers/payment.py", line 178, in process_payment\n'
+                    "    response = await self.gateway.charge(order_id, amount, provider)\n"
+                    '  File "/app/marketplace/gateways/{payment_provider}.py", line 92, in charge\n'
+                    "    result = await self._http.post(self.endpoint, json=payload, timeout={payment_timeout_ms}/1000)\n"
+                    '  File "/app/venv/lib/python3.11/site-packages/httpx/_client.py", line 1574, in post\n'
+                    '    raise ReadTimeout("Timed out while receiving data")\n'
+                    "httpx.ReadTimeout: Payment gateway did not respond within {payment_timeout_ms}ms\n"
+                    "PAYMENT_GATEWAY_TIMEOUT: order {order_id} via {payment_provider} — {gateway_response_code}"
                 ),
             },
             14: {
                 "name": "Product Catalog Sync Failure",
                 "subsystem": "commerce",
                 "vehicle_section": "catalog_system",
-                "error_type": "CatalogSyncException",
+                "error_type": "CATALOG_SYNC_FAILURE",
                 "sensor_type": "catalog_sync",
                 "affected_services": ["digital-marketplace", "card-printing-system"],
                 "cascade_services": ["auction-engine"],
                 "description": "Product catalog replication between marketplace and printing system failing",
                 "error_message": (
-                    "Catalog sync failure: {catalog_sync_failed} of {catalog_sync_total} records "
-                    "failed to sync from {catalog_source} to {catalog_destination}, "
-                    "last successful sync {catalog_last_sync_min}m ago, "
-                    "error: {catalog_error_detail}"
+                    "[CatalogReplicator] CATALOG_SYNC_FAILURE: "
+                    "{catalog_sync_failed}/{catalog_sync_total} records failed syncing "
+                    '{catalog_source} -> {catalog_destination}, '
+                    'last_sync={catalog_last_sync_min}m ago, '
+                    'error="{catalog_error_detail}"'
                 ),
                 "stack_trace": (
                     "Traceback (most recent call last):\n"
-                    '  File "commerce/catalog_replicator.py", line 267, in sync_catalog\n'
-                    "    result = self._replicate_batch(source, dest, batch)\n"
-                    '  File "commerce/catalog_replicator.py", line 245, in _replicate_batch\n'
-                    "    if result.failed_count > 0:\n"
-                    '  File "commerce/catalog_replicator.py", line 251, in _replicate_batch\n'
-                    '    raise CatalogSyncException(f"Sync failed: {failed}/{total} records from {source} to {dest}")\n'
-                    "CatalogSyncException: {catalog_sync_failed}/{catalog_sync_total} records failed syncing {catalog_source} -> {catalog_destination}"
+                    '  File "/app/marketplace/sync/catalog_replicator.py", line 267, in sync_catalog\n'
+                    "    result = await self.replicate_batch(source, dest, batch)\n"
+                    '  File "/app/marketplace/sync/catalog_replicator.py", line 245, in replicate_batch\n'
+                    "    async for record in batch:\n"
+                    '  File "/app/marketplace/db/connector.py", line 134, in execute_batch\n'
+                    '    raise DBSyncError("{catalog_error_detail}")\n'
+                    "marketplace.exceptions.CatalogSyncError: CATALOG_SYNC_FAILURE — "
+                    "{catalog_sync_failed}/{catalog_sync_total} records failed\n"
+                    "  Source: {catalog_source}\n"
+                    "  Destination: {catalog_destination}\n"
+                    "  Last successful sync: {catalog_last_sync_min} minutes ago"
                 ),
             },
             15: {
                 "name": "Print Queue Overflow",
                 "subsystem": "manufacturing",
                 "vehicle_section": "production_line",
-                "error_type": "PrintQueueOverflowException",
+                "error_type": "MES-QUEUE-OVERFLOW",
                 "sensor_type": "print_queue",
                 "affected_services": ["card-printing-system", "packaging-fulfillment"],
                 "cascade_services": ["digital-marketplace"],
                 "description": "Print job queue exceeding buffer capacity, new jobs being rejected",
                 "error_message": (
-                    "Print queue overflow: queue depth {print_queue_depth}/{print_queue_max} "
-                    "({print_queue_pct}% full), "
-                    "job {print_job_id} rejected, "
-                    "oldest pending job {print_oldest_job_min}m old, "
-                    "printer {printer_name} status {printer_status}"
+                    "[PrintScheduler] MES-QUEUE-OVERFLOW: "
+                    "queue={print_queue_depth}/{print_queue_max} ({print_queue_pct}%) "
+                    "job={print_job_id} REJECTED, oldest_pending={print_oldest_job_min}m "
+                    "printer={printer_name} status={printer_status}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "manufacturing/print_scheduler.py", line 312, in enqueue_job\n'
-                    "    if self._queue.size() >= self._max_depth:\n"
-                    '  File "manufacturing/print_scheduler.py", line 318, in enqueue_job\n'
-                    "    self._rejected_counter.increment()\n"
-                    '  File "manufacturing/print_scheduler.py", line 324, in enqueue_job\n'
-                    '    raise PrintQueueOverflowException(f"Queue full: {depth}/{max_d}, job {job_id} rejected")\n'
-                    "PrintQueueOverflowException: Queue at {print_queue_pct}%, job {print_job_id} rejected, printer {printer_name} {printer_status}"
+                    "com.fanatics.mes.exception.QueueOverflowException: "
+                    "MES-QUEUE-OVERFLOW: queue capacity exceeded {print_queue_depth}/{print_queue_max}\n"
+                    "\tat com.fanatics.mes.scheduler.PrintScheduler.enqueueJob(PrintScheduler.java:312)\n"
+                    "\tat com.fanatics.mes.scheduler.PrintScheduler.processIncoming(PrintScheduler.java:245)\n"
+                    "\tat com.fanatics.mes.queue.JobQueueManager.submit(JobQueueManager.java:189)\n"
+                    "\tat com.fanatics.mes.api.PrintJobController.submitJob(PrintJobController.java:78)\n"
+                    "\tat java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)\n"
+                    "\tat java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)\n"
+                    "\tat java.base/java.lang.Thread.run(Thread.java:842)\n"
+                    "  Printer: {printer_name} Status: {printer_status}\n"
+                    "  Job: {print_job_id} Oldest pending: {print_oldest_job_min}m"
                 ),
             },
             16: {
                 "name": "Quality Control Rejection Spike",
                 "subsystem": "manufacturing",
                 "vehicle_section": "quality_assurance",
-                "error_type": "QCRejectionException",
+                "error_type": "MES-QC-REJECT-THRESHOLD",
                 "sensor_type": "qc_inspection",
                 "affected_services": ["card-printing-system", "packaging-fulfillment"],
                 "cascade_services": ["digital-marketplace", "auction-engine"],
                 "description": "Automated quality inspection system rejecting cards above acceptable defect rate",
                 "error_message": (
-                    "QC rejection spike: {qc_reject_count}/{qc_inspected_count} cards rejected "
-                    "({qc_reject_pct}% defect rate, threshold {qc_threshold_pct}%), "
-                    "primary defect: {qc_defect_type}, "
-                    "batch {qc_batch_id}, line {qc_line_number}"
+                    "[QCInspector] MES-QC-REJECT-THRESHOLD: batch={qc_batch_id} "
+                    "rejected={qc_reject_count}/{qc_inspected_count} "
+                    "({qc_reject_pct}% defect rate, threshold {qc_threshold_pct}%) "
+                    "defect={qc_defect_type} line={qc_line_number}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "manufacturing/qc_inspector.py", line 234, in inspect_batch\n'
-                    "    defect_rate = rejected / inspected * 100\n"
-                    '  File "manufacturing/qc_inspector.py", line 240, in inspect_batch\n'
-                    "    if defect_rate > self.DEFECT_THRESHOLD:\n"
-                    '  File "manufacturing/qc_inspector.py", line 246, in inspect_batch\n'
-                    '    raise QCRejectionException(f"Defect rate {{defect_rate:.1f}}% on batch {{batch_id}}")\n'
-                    "QCRejectionException: Batch {qc_batch_id} defect rate {qc_reject_pct}% exceeds {qc_threshold_pct}% threshold on line {qc_line_number}"
+                    "com.fanatics.mes.exception.QCRejectException: "
+                    "MES-QC-REJECT-THRESHOLD: defect rate {qc_reject_pct}% exceeds threshold {qc_threshold_pct}%\n"
+                    "\tat com.fanatics.mes.quality.QCInspector.inspectBatch(QCInspector.java:234)\n"
+                    "\tat com.fanatics.mes.quality.QCInspector.runInspection(QCInspector.java:178)\n"
+                    "\tat com.fanatics.mes.quality.InspectionPipeline.process(InspectionPipeline.java:145)\n"
+                    "\tat com.fanatics.mes.api.QCController.triggerInspection(QCController.java:56)\n"
+                    "\tat java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)\n"
+                    "\tat java.base/java.lang.Thread.run(Thread.java:842)\n"
+                    "  Batch: {qc_batch_id} Line: {qc_line_number}\n"
+                    "  Primary defect: {qc_defect_type}\n"
+                    "  Inspected: {qc_inspected_count} Rejected: {qc_reject_count}"
                 ),
             },
             17: {
                 "name": "Fulfillment Label Printer Failure",
                 "subsystem": "logistics",
                 "vehicle_section": "shipping_bay",
-                "error_type": "LabelPrinterException",
+                "error_type": "WMS-LABEL-PRINTER-FAULT",
                 "sensor_type": "label_printer",
                 "affected_services": ["packaging-fulfillment", "card-printing-system"],
                 "cascade_services": ["digital-marketplace"],
                 "description": "Shipping label printers going offline or producing unreadable labels",
                 "error_message": (
-                    "Label printer failure: printer {label_printer_id} status {label_printer_status}, "
-                    "error code {label_error_code}, "
-                    "{label_failed_count} labels failed in last {label_window_min}m, "
-                    "carrier {label_carrier}, "
-                    "queue backed up to {label_queue_depth} shipments"
+                    "wms.shipping WMS-LABEL-PRINTER-FAULT printer={label_printer_id} "
+                    "status={label_printer_status} error_code={label_error_code} "
+                    "failed_labels={label_failed_count} window={label_window_min}m "
+                    "carrier={label_carrier} queue_depth={label_queue_depth}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "logistics/label_manager.py", line 198, in print_label\n'
-                    "    result = self._printer.send_zpl(label_data)\n"
-                    '  File "logistics/label_manager.py", line 176, in _printer_send_zpl\n'
-                    "    if result.status != 'OK':\n"
-                    '  File "logistics/label_manager.py", line 183, in _printer_send_zpl\n'
-                    '    raise LabelPrinterException(f"Printer {printer_id} error: {error_code}")\n'
-                    "LabelPrinterException: Printer {label_printer_id} {label_printer_status}, error {label_error_code}, {label_failed_count} failures"
+                    "WMS Label Subsystem Diagnostic Report\n"
+                    "--------------------------------------\n"
+                    "Printer ID:     {label_printer_id}\n"
+                    "Status:         {label_printer_status}\n"
+                    "Error Code:     {label_error_code}\n"
+                    "Failed Labels:  {label_failed_count} in last {label_window_min} minutes\n"
+                    "Carrier:        {label_carrier}\n"
+                    "Queue Depth:    {label_queue_depth} shipments pending\n"
+                    "ZPL Version:    ZPL-II\n"
+                    "Print Head:     NEEDS_REPLACEMENT\n"
+                    "Last Maintenance: 45 days ago\n"
+                    "Recommended Action: Replace print head, recalibrate label alignment"
                 ),
             },
             18: {
                 "name": "Warehouse Scanner Desync",
                 "subsystem": "logistics",
                 "vehicle_section": "inventory_system",
-                "error_type": "ScannerDesyncException",
+                "error_type": "WMS-SCANNER-DESYNC",
                 "sensor_type": "barcode_scanner",
                 "affected_services": ["packaging-fulfillment", "cloud-inventory-scanner"],
                 "cascade_services": ["digital-marketplace", "card-printing-system"],
                 "description": "Barcode scanners losing synchronization with inventory management system",
                 "error_message": (
-                    "Scanner desync: scanner {scanner_id} in zone {scanner_zone} "
-                    "last sync {scanner_last_sync_sec}s ago (max {scanner_sync_max_sec}s), "
-                    "{scanner_missed_scans} missed scans, "
-                    "inventory delta {inventory_delta} items, "
-                    "firmware v{scanner_firmware}"
+                    "wms.inventory WMS-SCANNER-DESYNC scanner={scanner_id} "
+                    "zone={scanner_zone} last_sync={scanner_last_sync_sec}s "
+                    "(max {scanner_sync_max_sec}s) missed_scans={scanner_missed_scans} "
+                    "inventory_delta={inventory_delta} firmware=v{scanner_firmware}"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "logistics/scanner_manager.py", line 267, in check_sync_status\n'
-                    "    age = time.time() - scanner.last_sync_ts\n"
-                    '  File "logistics/scanner_manager.py", line 273, in check_sync_status\n'
-                    "    if age > self.MAX_SYNC_AGE:\n"
-                    '  File "logistics/scanner_manager.py", line 279, in check_sync_status\n'
-                    '    raise ScannerDesyncException(f"Scanner {scanner_id} desync: {age}s since last sync")\n'
-                    "ScannerDesyncException: Scanner {scanner_id} zone {scanner_zone} desync, {scanner_missed_scans} missed scans"
+                    "WMS Scanner Sync Diagnostic Report\n"
+                    "------------------------------------\n"
+                    "Scanner ID:     {scanner_id}\n"
+                    "Zone:           {scanner_zone}\n"
+                    "Last Sync:      {scanner_last_sync_sec}s ago (threshold: {scanner_sync_max_sec}s)\n"
+                    "Missed Scans:   {scanner_missed_scans}\n"
+                    "Inventory Delta: {inventory_delta} items\n"
+                    "Firmware:       v{scanner_firmware}\n"
+                    "WiFi Signal:    -72 dBm (marginal)\n"
+                    "Battery Level:  34%\n"
+                    "Recommended Action: Reconnect scanner, verify WiFi coverage in {scanner_zone}"
                 ),
             },
             19: {
                 "name": "Orphaned Cloud Resource Alert",
                 "subsystem": "cloud_ops",
                 "vehicle_section": "asset_management",
-                "error_type": "OrphanedResourceException",
+                "error_type": "CLOUD-ORPHANED-RESOURCE",
                 "sensor_type": "cloud_asset",
                 "affected_services": ["cloud-inventory-scanner", "network-controller"],
                 "cascade_services": ["firewall-gateway"],
                 "description": "Cloud resources detected without owner tags or associated workloads",
                 "error_message": (
-                    "Orphaned resource: {cloud_resource_type} '{cloud_resource_id}' "
-                    "in {cloud_resource_provider}/{cloud_resource_region}, "
-                    "no owner tag, running for {cloud_resource_age_days} days, "
-                    "estimated cost ${cloud_resource_cost_daily}/day, "
-                    "security group {cloud_resource_sg}"
+                    "cloud-governance CLOUD-ORPHANED-RESOURCE "
+                    "resource_type={cloud_resource_type} resource_id={cloud_resource_id} "
+                    "provider={cloud_resource_provider} region={cloud_resource_region} "
+                    "age_days={cloud_resource_age_days} cost=${cloud_resource_cost_daily}/day "
+                    "security_group={cloud_resource_sg} owner=NONE"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "cloud_ops/asset_scanner.py", line 345, in scan_resources\n'
-                    "    owner = self._resolve_owner(resource)\n"
-                    '  File "cloud_ops/asset_scanner.py", line 323, in _resolve_owner\n'
-                    "    if not resource.tags.get('owner') and not resource.tags.get('team'):\n"
-                    '  File "cloud_ops/asset_scanner.py", line 329, in _resolve_owner\n'
-                    '    raise OrphanedResourceException(f"Resource {resource_id} has no owner tag")\n'
-                    "OrphanedResourceException: {cloud_resource_type} '{cloud_resource_id}' in {cloud_resource_provider}/{cloud_resource_region} unowned for {cloud_resource_age_days} days"
+                    "Cloud Governance Scan Report\n"
+                    "-----------------------------\n"
+                    "Resource:       {cloud_resource_type} ({cloud_resource_id})\n"
+                    "Provider:       {cloud_resource_provider}\n"
+                    "Region:         {cloud_resource_region}\n"
+                    "Created:        {cloud_resource_age_days} days ago\n"
+                    "Daily Cost:     ${cloud_resource_cost_daily}\n"
+                    "Security Group: {cloud_resource_sg}\n"
+                    "Owner Tag:      MISSING\n"
+                    "Team Tag:       MISSING\n"
+                    "Compliance:     FAIL — no owner tag after 14-day grace period\n"
+                    "Action:         Schedule for termination review"
                 ),
             },
             20: {
                 "name": "Cross-Cloud VPN Tunnel Flapping",
                 "subsystem": "cloud_ops",
                 "vehicle_section": "vpn_connectivity",
-                "error_type": "VPNTunnelFlapException",
+                "error_type": "VPN-TUNNEL-FLAP",
                 "sensor_type": "vpn_tunnel",
                 "affected_services": ["cloud-inventory-scanner", "network-controller"],
                 "cascade_services": ["dns-dhcp-service", "firewall-gateway"],
                 "description": "Site-to-site VPN tunnels between cloud providers repeatedly going up and down",
                 "error_message": (
-                    "VPN tunnel flapping: tunnel {vpn_tunnel_name} ({vpn_src_cloud} -> {vpn_dst_cloud}) "
-                    "{vpn_flap_count} state changes in {vpn_flap_window}s, "
-                    "current state {vpn_current_state}, "
-                    "IKE phase {vpn_ike_phase} {vpn_ike_status}, "
-                    "last DPD {vpn_last_dpd_sec}s ago"
+                    "cloud-networking VPN-TUNNEL-FLAP tunnel={vpn_tunnel_name} "
+                    "path={vpn_src_cloud}->{vpn_dst_cloud} flaps={vpn_flap_count} "
+                    "window={vpn_flap_window}s state={vpn_current_state} "
+                    "ike_phase={vpn_ike_phase} ike_status={vpn_ike_status} "
+                    "last_dpd={vpn_last_dpd_sec}s"
                 ),
                 "stack_trace": (
-                    "Traceback (most recent call last):\n"
-                    '  File "cloud_ops/vpn_monitor.py", line 289, in check_tunnel_health\n'
-                    "    flap_count = self._count_state_changes(tunnel, window)\n"
-                    '  File "cloud_ops/vpn_monitor.py", line 267, in _count_state_changes\n'
-                    "    if flap_count > self.FLAP_THRESHOLD:\n"
-                    '  File "cloud_ops/vpn_monitor.py", line 274, in _count_state_changes\n'
-                    '    raise VPNTunnelFlapException(f"Tunnel {name} flapped {flap_count} times in {window}s")\n'
-                    "VPNTunnelFlapException: Tunnel {vpn_tunnel_name} ({vpn_src_cloud}->{vpn_dst_cloud}) flapped {vpn_flap_count} times"
+                    "VPN Tunnel Diagnostic Report\n"
+                    "------------------------------\n"
+                    "Tunnel:         {vpn_tunnel_name}\n"
+                    "Path:           {vpn_src_cloud} -> {vpn_dst_cloud}\n"
+                    "Current State:  {vpn_current_state}\n"
+                    "Flap Count:     {vpn_flap_count} in {vpn_flap_window}s\n"
+                    "IKE Phase:      {vpn_ike_phase}\n"
+                    "IKE Status:     {vpn_ike_status}\n"
+                    "Last DPD:       {vpn_last_dpd_sec}s ago\n"
+                    "Local Gateway:  10.0.1.1\n"
+                    "Remote Gateway: 10.2.0.1\n"
+                    "MTU:            1400\n"
+                    "Rekey Interval: 3600s\n"
+                    "Action:         Check IPSec SA, verify gateway reachability"
                 ),
             },
         }
@@ -928,7 +976,17 @@ class FanaticsScenario(BaseScenario):
                 "Palo Alto PAN-OS firewall management, Juniper Mist wireless LAN controllers, "
                 "Infoblox DDI (DNS/DHCP/IPAM), AWS VPC networking, Azure Virtual Network, "
                 "and GCP VPC. You understand BGP peering, spanning tree protocol, "
-                "802.1X/RADIUS authentication, SSL inspection, and cross-cloud VPN tunneling."
+                "802.1X/RADIUS authentication, SSL inspection, and cross-cloud VPN tunneling. "
+                "When investigating incidents, search for these vendor-specific identifiers in logs: "
+                "Cisco syslog mnemonics (SW_MATM-4-MACFLAP_NOTIF, SPANTREE-2-TOPO_CHANGE, BGP-3-NOTIFICATION), "
+                "PAN-OS system events (SYSTEM-session-threshold, SYSTEM-cpu-critical, SYSTEM-cert-expire), "
+                "Juniper Mist events (AP_DISCONNECTED, INTERFERENCE_DETECTED, AUTH_FAILURE_STORM), "
+                "DNS/DHCP faults (NAMED-SERVFAIL-FORWARDER, DHCPD-LEASE-EXHAUSTION), "
+                "commerce errors (BID_LATENCY_SLA_BREACH, PAYMENT_GATEWAY_TIMEOUT, CATALOG_SYNC_FAILURE), "
+                "manufacturing faults (MES-QUEUE-OVERFLOW, MES-QC-REJECT-THRESHOLD), "
+                "warehouse faults (WMS-LABEL-PRINTER-FAULT, WMS-SCANNER-DESYNC), "
+                "and cloud ops events (CLOUD-ORPHANED-RESOURCE, VPN-TUNNEL-FLAP). "
+                "Log messages are in body.text — NEVER search the body field alone."
             ),
         }
 
