@@ -786,6 +786,7 @@ class FinancialScenario(BaseScenario):
         return {
             "id": "finserv-trading-analyst",
             "name": "Trading Operations Analyst",
+            "assessment_tool_name": "trading_risk_assessment",
             "system_prompt": (
                 "You are the Trading Operations Analyst, an expert AI assistant for "
                 "financial trading platform operations. You specialize in FIX protocol "
@@ -798,12 +799,21 @@ class FinancialScenario(BaseScenario):
         }
 
     @property
-    def tool_definitions(self) -> list[dict[str, Any]]:
-        return []  # Populated by setup scripts
+    def assessment_tool_config(self) -> dict[str, Any]:
+        return {
+            "id": "trading_risk_assessment",
+            "description": (
+                "Comprehensive pre-market trading risk assessment. Evaluates all "
+                "services against operational readiness criteria for trading sessions. "
+                "Returns data for risk evaluation across order management, matching "
+                "engine, settlement, and compliance systems. "
+                "Log message field: body.text (never use 'body' alone)."
+            ),
+        }
 
     @property
     def knowledge_base_docs(self) -> list[dict[str, Any]]:
-        return []  # Populated by setup scripts
+        return []  # Populated by deployer from channel_registry
 
     # ── Service Classes ───────────────────────────────────────────────
 

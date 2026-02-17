@@ -23,6 +23,7 @@ import threading
 import time
 
 from app.telemetry import OTLPClient, _format_attributes, SCHEMA_URL, _now_ns
+from app.config import NAMESPACE
 
 logger = logging.getLogger("vpc-flow-generator")
 
@@ -30,7 +31,7 @@ FLOW_INTERVAL = int(os.getenv("VPC_FLOW_INTERVAL", "5"))
 BATCH_SIZE_MIN = 10
 BATCH_SIZE_MAX = 20
 
-SCOPE_NAME = "nova7-vpc-flow-generator"
+SCOPE_NAME = f"{NAMESPACE}-vpc-flow-generator"
 SCOPE_VERSION = "1.0.0"
 
 # ── Realistic IP pools ──────────────────────────────────────────────────────
@@ -53,7 +54,7 @@ GCP_EXTERNAL_IPS = [
     "104.199.30.5", "104.199.30.77", "142.250.80.10", "142.250.80.25",
 ]
 
-GCP_VPC_NAMES = ["nova7-vpc-prod", "nova7-vpc-staging", "nova7-vpc-data"]
+GCP_VPC_NAMES = [f"{NAMESPACE}-vpc-prod", f"{NAMESPACE}-vpc-staging", f"{NAMESPACE}-vpc-data"]
 COUNTRY_CODES = ["USA", "DEU", "GBR", "JPN", "AUS", "CAN", "FRA", "BRA", "IND", "SGP"]
 TRANSPORTS = ["tcp", "udp", "icmp"]
 COMMON_PORTS = [22, 53, 80, 443, 3306, 5432, 6379, 8080, 8443, 9200, 9300]
@@ -118,7 +119,7 @@ def _build_gcp_resource() -> dict:
         "cloud.provider": "gcp",
         "cloud.platform": "gcp_compute_engine",
         "cloud.region": "us-central1",
-        "cloud.account.id": "nova7-project-prod",
+        "cloud.account.id": f"{NAMESPACE}-project-prod",
         "data_stream.type": "logs",
         "data_stream.dataset": "gcp.vpcflow",
         "data_stream.namespace": "default",

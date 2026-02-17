@@ -23,10 +23,11 @@ MAX_FAULT_DURATION = 3600  # 1 hour
 class ChaosController:
     """Thread-safe chaos channel state management."""
 
-    def __init__(self):
+    def __init__(self, channel_registry: dict[int, dict[str, Any]] | None = None):
         self._lock = threading.RLock()
+        self._channel_registry = channel_registry or CHANNEL_REGISTRY
         self._channels: dict[int, dict[str, Any]] = {}
-        for ch_id in CHANNEL_REGISTRY:
+        for ch_id in self._channel_registry:
             self._channels[ch_id] = {
                 "state": STANDBY,
                 "mode": None,
@@ -45,7 +46,7 @@ class ChaosController:
         callback_url: str = "",
         user_email: str = "",
     ) -> dict[str, Any]:
-        if channel not in CHANNEL_REGISTRY:
+        if channel not in self._channel_registry:
             return {"error": f"Unknown channel {channel}"}
 
         with self._lock:
@@ -61,7 +62,7 @@ class ChaosController:
             ch["callback_url"] = callback_url
             ch["user_email"] = user_email
 
-        ch_def = CHANNEL_REGISTRY[channel]
+        ch_def = self._channel_registry[channel]
         logger.info(
             "CHAOS: Channel %d [%s] ACTIVATED (mode=%s)",
             channel,
@@ -76,7 +77,7 @@ class ChaosController:
         }
 
     def resolve(self, channel: int) -> dict[str, Any]:
-        if channel not in CHANNEL_REGISTRY:
+        if channel not in self._channel_registry:
             return {"error": f"Unknown channel {channel}"}
 
         with self._lock:
@@ -90,7 +91,7 @@ class ChaosController:
             ch["callback_url"] = ""
             ch["user_email"] = ""
 
-        ch_def = CHANNEL_REGISTRY[channel]
+        ch_def = self._channel_registry[channel]
         logger.info("CHAOS: Channel %d [%s] RESOLVED", channel, ch_def["name"])
         return {
             "status": "resolved",
@@ -113,7 +114,7 @@ class ChaosController:
                 ch["resolved_at"] = now
                 ch["callback_url"] = ""
                 ch["user_email"] = ""
-                ch_def = CHANNEL_REGISTRY[ch_id]
+                ch_def = self._channel_registry[ch_id]
                 logger.info(
                     "CHAOS: Channel %d [%s] AUTO-EXPIRED after %ds",
                     ch_id,
@@ -132,7 +133,7 @@ class ChaosController:
             self._expire_stale()
             result = {}
             for ch_id, ch_state in self._channels.items():
-                ch_def = CHANNEL_REGISTRY[ch_id]
+                ch_def = self._channel_registry[ch_id]
                 result[ch_id] = {
                     "name": ch_def["name"],
                     "subsystem": ch_def["subsystem"],
@@ -145,11 +146,11 @@ class ChaosController:
             return result
 
     def get_channel_status(self, channel: int) -> dict[str, Any]:
-        if channel not in CHANNEL_REGISTRY:
+        if channel not in self._channel_registry:
             return {"error": f"Unknown channel {channel}"}
         with self._lock:
             ch_state = self._channels[channel]
-            ch_def = CHANNEL_REGISTRY[channel]
+            ch_def = self._channel_registry[channel]
             return {
                 "channel": channel,
                 "name": ch_def["name"],

@@ -16,18 +16,26 @@ logger = logging.getLogger("nova7.manager")
 class ServiceManager:
     """Manages all service instances, log generators, and the mission countdown clock."""
 
-    def __init__(self, chaos_controller, dashboard_ws=None):
+    def __init__(self, chaos_controller, dashboard_ws=None, ctx=None, otlp_client: OTLPClient | None = None):
         self.chaos_controller = chaos_controller
         self.dashboard_ws = dashboard_ws
-        self.otlp = OTLPClient()
+        self._ctx = ctx  # ScenarioContext or None
+        self.otlp = otlp_client or OTLPClient()
         self.services: dict[str, Any] = {}
 
-        # Countdown state
-        self._countdown_total = COUNTDOWN_START_SECONDS
-        self._countdown_remaining = float(COUNTDOWN_START_SECONDS)
-        self._countdown_speed = COUNTDOWN_SPEED
+        # Countdown state — from context or module-level defaults
+        if ctx:
+            _countdown = ctx.scenario.countdown_config
+            self._countdown_total = _countdown.start_seconds if _countdown.enabled else 600
+            self._countdown_speed = _countdown.speed if _countdown.enabled else 1.0
+            self._countdown_enabled = _countdown.enabled
+        else:
+            self._countdown_total = COUNTDOWN_START_SECONDS
+            self._countdown_speed = COUNTDOWN_SPEED
+            self._countdown_enabled = COUNTDOWN_ENABLED
+
+        self._countdown_remaining = float(self._countdown_total)
         self._countdown_running = False
-        self._countdown_enabled = COUNTDOWN_ENABLED
         self._countdown_thread: Optional[threading.Thread] = None
         self._countdown_lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -39,14 +47,26 @@ class ServiceManager:
 
     def _init_services(self) -> None:
         """Dynamically load and instantiate services from the active scenario."""
-        from scenarios import get_scenario
+        from app.services.base_service import BaseService
 
-        scenario = get_scenario(ACTIVE_SCENARIO)
+        if self._ctx:
+            scenario = self._ctx.scenario
+        else:
+            import os
+            from scenarios import get_scenario
+            active = os.environ.get("ACTIVE_SCENARIO", ACTIVE_SCENARIO)
+            scenario = get_scenario(active)
+
         service_classes = scenario.get_service_classes()
 
-        for cls in service_classes:
-            svc = cls(self.chaos_controller, self.otlp)
-            self.services[svc.SERVICE_NAME] = svc
+        with BaseService._context_lock:
+            BaseService.set_context(self._ctx)
+            try:
+                for cls in service_classes:
+                    svc = cls(self.chaos_controller, self.otlp)
+                    self.services[svc.SERVICE_NAME] = svc
+            finally:
+                BaseService.clear_context()
 
     def start_all(self) -> None:
         for svc in self.services.values():
@@ -79,18 +99,45 @@ class ServiceManager:
         from log_generators.nginx_metrics_generator import run as run_nginx_metrics
         from log_generators.vpc_flow_generator import run as run_vpc
 
+        # Build scenario_data dict from context for scenario-dependent generators
+        scenario_data = None
+        if self._ctx:
+            scenario = self._ctx.scenario
+            scenario_data = {
+                "services": self._ctx.services,
+                "channel_registry": self._ctx.channel_registry,
+                "namespace": self._ctx.namespace,
+                "hosts": scenario.hosts,
+                "k8s_clusters": scenario.k8s_clusters,
+                "service_topology": scenario.service_topology,
+                "entry_endpoints": scenario.entry_endpoints,
+                "db_operations": scenario.db_operations,
+            }
+
+        # Trace generator needs chaos_controller and scenario_data
+        trace_args = (self.otlp, self._stop_event, self.chaos_controller)
+        trace_kwargs = {"scenario_data": scenario_data} if scenario_data else {}
+
+        # Host metrics generator needs scenario_data
+        host_args = (self.otlp, self._stop_event)
+        host_kwargs = {"scenario_data": scenario_data} if scenario_data else {}
+
+        # K8s metrics generator needs scenario_data
+        k8s_args = (self.otlp, self._stop_event)
+        k8s_kwargs = {"scenario_data": scenario_data} if scenario_data else {}
+
         generators = [
-            ("gen-traces", run_traces, (self.otlp, self._stop_event, self.chaos_controller)),
-            ("gen-host-metrics", run_metrics, (self.otlp, self._stop_event)),
-            ("gen-nginx", run_nginx, (self.otlp, self._stop_event)),
-            ("gen-mysql", run_mysql, (self.otlp, self._stop_event)),
-            ("gen-k8s-metrics", run_k8s, (self.otlp, self._stop_event)),
-            ("gen-nginx-metrics", run_nginx_metrics, (self.otlp, self._stop_event)),
-            ("gen-vpc-flow", run_vpc, (self.otlp, self._stop_event)),
+            ("gen-traces", run_traces, trace_args, trace_kwargs),
+            ("gen-host-metrics", run_metrics, host_args, host_kwargs),
+            ("gen-nginx", run_nginx, (self.otlp, self._stop_event), {}),
+            ("gen-mysql", run_mysql, (self.otlp, self._stop_event), {}),
+            ("gen-k8s-metrics", run_k8s, k8s_args, k8s_kwargs),
+            ("gen-nginx-metrics", run_nginx_metrics, (self.otlp, self._stop_event), {}),
+            ("gen-vpc-flow", run_vpc, (self.otlp, self._stop_event), {}),
         ]
-        for name, fn, args in generators:
+        for name, fn, args, kwargs in generators:
             t = threading.Thread(
-                target=fn, args=args,
+                target=fn, args=args, kwargs=kwargs,
                 name=name, daemon=True,
             )
             t.start()

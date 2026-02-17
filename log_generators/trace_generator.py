@@ -57,11 +57,13 @@ def _gen_span_id() -> str:
     return secrets.token_hex(8)
 
 
-def _build_resource(service_name: str) -> dict:
-    cfg = SERVICES[service_name]
+def _build_resource(service_name: str, services: dict | None = None, namespace: str | None = None) -> dict:
+    _services = services or SERVICES
+    _namespace = namespace or NAMESPACE
+    cfg = _services[service_name]
     attrs = {
         "service.name": service_name,
-        "service.namespace": NAMESPACE,
+        "service.namespace": _namespace,
         "service.version": "1.0.0",
         "service.instance.id": f"{service_name}-001",
         "telemetry.sdk.language": cfg.get("language", "python"),
@@ -71,7 +73,7 @@ def _build_resource(service_name: str) -> dict:
         "cloud.platform": cfg["cloud_platform"],
         "cloud.region": cfg["cloud_region"],
         "cloud.availability_zone": cfg["cloud_availability_zone"],
-        "deployment.environment": "production",
+        "deployment.environment": f"production-{_namespace}",
         "host.name": f"{service_name}-host",
         "host.architecture": "amd64",
         "os.type": "linux",
@@ -86,24 +88,34 @@ def _build_resource(service_name: str) -> dict:
 
 
 def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
-                    chaos_affected: set[str] | None = None) -> dict[str, list]:
+                    chaos_affected: set[str] | None = None,
+                    *, services: dict | None = None, namespace: str | None = None,
+                    service_topology: dict | None = None,
+                    entry_endpoints: dict | None = None,
+                    db_operations: dict | None = None) -> dict[str, list]:
     """Generate a single distributed trace across multiple services.
 
     Returns a dict mapping service_name -> list of spans for that service.
     When chaos_affected is provided, those services get high error rates (70%)
     and elevated latency; all others use a healthy 3% baseline.
     """
+    _services = services or SERVICES
+    _namespace = namespace or NAMESPACE
+    _topology = service_topology or SERVICE_TOPOLOGY
+    _endpoints = entry_endpoints or ENTRY_ENDPOINTS
+    _db_ops = db_operations or DB_OPERATIONS
+
     trace_id = _gen_trace_id()
     spans_by_service: dict[str, list] = {}
 
     # Pick a random entry-point service (weighted toward first service)
-    service_names = list(SERVICES.keys())
+    service_names = list(_services.keys())
     first_service = service_names[0]
     entry_services = [first_service] * 4 + [
-        s for s in service_names[1:] if s in ENTRY_ENDPOINTS
+        s for s in service_names[1:] if s in _endpoints
     ]
     entry_service = rng.choice(entry_services)
-    entry_endpoint, entry_method = rng.choice(ENTRY_ENDPOINTS[entry_service])
+    entry_endpoint, entry_method = rng.choice(_endpoints[entry_service])
 
     # Determine if this trace has errors — chaos-aware probability
     if chaos_affected and entry_service in chaos_affected:
@@ -117,7 +129,7 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
         if chaos_affected and entry_service in chaos_affected:
             error_service = entry_service
         else:
-            downstream = SERVICE_TOPOLOGY.get(entry_service, [])
+            downstream = _topology.get(entry_service, [])
             if downstream:
                 error_service = rng.choice(downstream)[0]
 
@@ -151,8 +163,8 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
     spans_by_service.setdefault(entry_service, []).append(root_span)
 
     # Add DB span if this service does DB operations
-    if entry_service in DB_OPERATIONS and rng.random() < 0.6:
-        op, table, statement = rng.choice(DB_OPERATIONS[entry_service])
+    if entry_service in _db_ops and rng.random() < 0.6:
+        op, table, statement = rng.choice(_db_ops[entry_service])
         db_span_id = _gen_span_id()
         db_duration = rng.randint(2, min(30, total_duration // 3))
         db_span = client.build_span(
@@ -165,18 +177,18 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
             status_code=STATUS_OK,
             attributes={
                 "db.system": "mysql",
-                "db.name": f"{NAMESPACE}_telemetry",
+                "db.name": f"{_namespace}_telemetry",
                 "db.statement": statement,
                 "db.operation": op,
                 "db.sql.table": table,
-                "net.peer.name": f"{NAMESPACE}-mysql-host",
+                "net.peer.name": f"{_namespace}-mysql-host",
                 "net.peer.port": 3306,
             },
         )
         spans_by_service.setdefault(entry_service, []).append(db_span)
 
     # Generate downstream CLIENT+SERVER spans based on topology
-    downstream_calls = SERVICE_TOPOLOGY.get(entry_service, [])
+    downstream_calls = _topology.get(entry_service, [])
     if downstream_calls:
         # Pick 1-3 downstream calls
         num_calls = min(len(downstream_calls), rng.randint(1, 3))
@@ -239,8 +251,8 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
             spans_by_service.setdefault(callee_service, []).append(server_span)
 
             # DB span on the callee side (if applicable)
-            if callee_service in DB_OPERATIONS and rng.random() < 0.5:
-                op, table, statement = rng.choice(DB_OPERATIONS[callee_service])
+            if callee_service in _db_ops and rng.random() < 0.5:
+                op, table, statement = rng.choice(_db_ops[callee_service])
                 db_span_id = _gen_span_id()
                 db_duration = rng.randint(1, max(1, server_duration // 3))
                 db_span = client.build_span(
@@ -253,18 +265,18 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                     status_code=STATUS_OK,
                     attributes={
                         "db.system": "mysql",
-                        "db.name": f"{NAMESPACE}_telemetry",
+                        "db.name": f"{_namespace}_telemetry",
                         "db.statement": statement,
                         "db.operation": op,
                         "db.sql.table": table,
-                        "net.peer.name": f"{NAMESPACE}-mysql-host",
+                        "net.peer.name": f"{_namespace}-mysql-host",
                         "net.peer.port": 3306,
                     },
                 )
                 spans_by_service.setdefault(callee_service, []).append(db_span)
 
             # Second-level downstream calls (e.g., navigation -> sensor-validator)
-            second_downstream = SERVICE_TOPOLOGY.get(callee_service, [])
+            second_downstream = _topology.get(callee_service, [])
             if second_downstream and rng.random() < 0.4:
                 second_callee, second_endpoint, second_method = rng.choice(second_downstream)
                 second_duration = rng.randint(5, max(5, server_duration // 2))
@@ -316,10 +328,20 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
 
 
 # ── Run loop (used by ServiceManager and standalone) ──────────────────────────
-def run(client: OTLPClient, stop_event: threading.Event, chaos_controller=None) -> None:
+def run(client: OTLPClient, stop_event: threading.Event, chaos_controller=None,
+        scenario_data: dict | None = None) -> None:
     """Run trace generator loop until stop_event is set."""
     rng = random.Random()
-    resources = {svc: _build_resource(svc) for svc in SERVICES}
+
+    # Use scenario_data overrides or fall back to module-level globals
+    _services = scenario_data["services"] if scenario_data else SERVICES
+    _namespace = scenario_data["namespace"] if scenario_data else NAMESPACE
+    _channel_registry = scenario_data["channel_registry"] if scenario_data else CHANNEL_REGISTRY
+    _topology = scenario_data["service_topology"] if scenario_data else SERVICE_TOPOLOGY
+    _endpoints = scenario_data["entry_endpoints"] if scenario_data else ENTRY_ENDPOINTS
+    _db_ops = scenario_data["db_operations"] if scenario_data else DB_OPERATIONS
+
+    resources = {svc: _build_resource(svc, services=_services, namespace=_namespace) for svc in _services}
     total_traces = 0
     total_spans = 0
 
@@ -330,7 +352,7 @@ def run(client: OTLPClient, stop_event: threading.Event, chaos_controller=None) 
         chaos_affected: set[str] = set()
         if chaos_controller:
             for ch_id in chaos_controller.get_active_channels():
-                ch = CHANNEL_REGISTRY.get(ch_id)
+                ch = _channel_registry.get(ch_id)
                 if ch:
                     chaos_affected.update(ch["affected_services"])
 
@@ -338,7 +360,12 @@ def run(client: OTLPClient, stop_event: threading.Event, chaos_controller=None) 
 
         batch_by_service: dict[str, list] = {}
         for _ in range(num_traces):
-            trace_spans = _generate_trace(client, resources, rng, chaos_affected or None)
+            trace_spans = _generate_trace(
+                client, resources, rng, chaos_affected or None,
+                services=_services, namespace=_namespace,
+                service_topology=_topology, entry_endpoints=_endpoints,
+                db_operations=_db_ops,
+            )
             for svc, spans in trace_spans.items():
                 batch_by_service.setdefault(svc, []).extend(spans)
 

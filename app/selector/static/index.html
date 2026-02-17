@@ -323,6 +323,25 @@
         .active-links a:hover {
             background: rgba(0,191,179,0.3);
         }
+        .btn-danger {
+            background: rgba(248,81,73,0.15);
+            border: 1px solid rgba(248,81,73,0.4);
+            color: var(--red);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        .btn-danger:hover {
+            background: rgba(248,81,73,0.3);
+        }
+        .btn-danger:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
 
         /* Status message */
         .status-msg {
@@ -415,22 +434,8 @@
         <p>Select a scenario, connect your Elastic environment, and launch a fully instrumented observability demo.</p>
     </div>
 
-    <!-- Active Scenario Banner -->
-    <div class="active-banner" id="active-banner">
-        <div class="active-banner-inner">
-            <div class="active-info">
-                <div class="active-dot"></div>
-                <div class="active-text">
-                    <h3 id="active-name">Loading...</h3>
-                    <p id="active-desc">Scenario running</p>
-                </div>
-            </div>
-            <div class="active-links">
-                <a href="/home">Landing Page</a>
-                <a href="/dashboard">Dashboard</a>
-                <a href="/chaos">Chaos Controller</a>
-            </div>
-        </div>
+    <!-- Active Deployments Banner (populated by JS) -->
+    <div id="deployments-banner" style="padding: 0 40px; max-width: 1200px; margin: 0 auto 20px; display: none;">
     </div>
 
     <!-- Scenario Cards -->
@@ -503,6 +508,7 @@
 
     let scenarios = [];
     let selectedScenario = null;
+    let activeDeployments = [];
 
     async function init() {
         // Load scenarios
@@ -512,23 +518,67 @@
             scenarios = [];
         }
 
-        // Load active scenario info
-        try {
-            const active = await (await fetch('/api/scenario')).json();
-            if (active && active.id) {
-                document.getElementById('active-banner').classList.add('visible');
-                document.getElementById('active-name').textContent = active.name + ' (' + active.namespace + ')';
-                document.getElementById('active-desc').textContent = 'Currently running with ' + Object.keys(active.services).length + ' services';
-            }
-        } catch (e) {}
+        // Load active deployments
+        await refreshDeployments();
 
         renderScenarios();
+    }
+
+    async function refreshDeployments() {
+        try {
+            activeDeployments = await (await fetch('/api/deployments')).json();
+        } catch (e) {
+            activeDeployments = [];
+        }
+        renderDeploymentsBanner();
+        // Update running badges on scenario cards
+        document.querySelectorAll('.scenario-card').forEach(c => {
+            const badge = c.querySelector('.running-badge');
+            const isRunning = activeDeployments.some(d => d.scenario_id === c.dataset.id && d.running);
+            if (badge) badge.style.display = isRunning ? 'inline-block' : 'none';
+        });
+    }
+
+    function renderDeploymentsBanner() {
+        const banner = document.getElementById('deployments-banner');
+        if (!activeDeployments || activeDeployments.length === 0) {
+            banner.style.display = 'none';
+            return;
+        }
+        banner.style.display = 'block';
+        banner.innerHTML = activeDeployments.map(d => `
+            <div style="background: linear-gradient(135deg, rgba(0,191,179,0.15) 0%, rgba(0,191,179,0.05) 100%);
+                        border: 1px solid rgba(0,191,179,0.3); border-radius: 12px; padding: 16px 20px;
+                        display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 20px;">${SCENARIO_ICONS[d.scenario_id] || '\uD83D\uDD27'}</span>
+                    <div>
+                        <div style="font-weight: 600; color: #e6edf3; font-size: 14px;">
+                            ${d.scenario_name}
+                            <span style="background: ${d.running ? 'var(--green)' : 'var(--amber)'}; color: #000;
+                                         font-size: 10px; padding: 2px 8px; border-radius: 10px; margin-left: 8px;
+                                         font-weight: 700;">${d.running ? 'RUNNING' : 'STOPPED'}</span>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-dim);">${d.namespace} &mdash; ${d.deployment_id}</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <a href="/home?deployment_id=${d.deployment_id}" style="color: var(--teal); font-size: 13px; text-decoration: none;">Landing</a>
+                    <a href="/dashboard?deployment_id=${d.deployment_id}" style="color: var(--teal); font-size: 13px; text-decoration: none;">Dashboard</a>
+                    <a href="/chaos?deployment_id=${d.deployment_id}" style="color: var(--teal); font-size: 13px; text-decoration: none;">Chaos</a>
+                    <button onclick="stopAndTeardown('${d.deployment_id}')" style="background: var(--red); color: #fff;
+                            border: none; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600;
+                            cursor: pointer; font-family: inherit;">Stop &amp; Teardown</button>
+                </div>
+            </div>
+        `).join('');
     }
 
     function renderScenarios() {
         const grid = document.getElementById('scenario-grid');
         grid.innerHTML = '';
         scenarios.forEach(s => {
+            const isRunning = activeDeployments.some(d => d.scenario_id === s.id && d.running);
             const card = document.createElement('div');
             card.className = 'scenario-card';
             card.dataset.id = s.id;
@@ -537,6 +587,9 @@
                 <h3>${s.name}</h3>
                 <p>${s.description.substring(0, 120)}${s.description.length > 120 ? '...' : ''}</p>
                 <span class="scenario-ns">${s.namespace}</span>
+                <span class="running-badge" style="display: ${isRunning ? 'inline-block' : 'none'};
+                    position: absolute; top: 10px; right: 10px; background: var(--green); color: #000;
+                    font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 10px; letter-spacing: 0.5px;">RUNNING</span>
             `;
             card.onclick = () => selectScenario(s.id);
             grid.appendChild(card);
@@ -558,7 +611,6 @@
         const otlpInput = document.getElementById('otlp-url');
 
         if (kibanaUrl && kibanaUrl.includes('.kb.')) {
-            // Only auto-populate if user hasn't manually overridden
             if (!esInput.dataset.manual) {
                 esInput.value = kibanaUrl.replace('.kb.', '.es.');
             }
@@ -570,7 +622,6 @@
         }
     }
 
-    // Mark advanced fields as manually edited if user types in them
     document.addEventListener('DOMContentLoaded', () => {
         ['es-url', 'otlp-url'].forEach(id => {
             const el = document.getElementById(id);
@@ -592,7 +643,6 @@
         msg.textContent = 'Testing...';
         msg.className = 'status-msg visible info';
 
-        // Gather optional Advanced overrides
         const esUrl = document.getElementById('es-url').value.trim() || undefined;
         const otlpUrl = document.getElementById('otlp-url').value.trim() || undefined;
 
@@ -601,6 +651,7 @@
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
+                    scenario_id: selectedScenario,
                     kibana_url: kibanaUrl,
                     api_key: key,
                     elastic_url: esUrl,
@@ -615,7 +666,6 @@
                 msg.textContent = status;
                 msg.className = 'status-msg visible ok';
 
-                // Back-fill derived URLs into Advanced fields
                 if (data.elastic_url && !document.getElementById('es-url').dataset.manual) {
                     document.getElementById('es-url').value = data.elastic_url;
                 }
@@ -640,14 +690,11 @@
         const esUrl = document.getElementById('es-url').value.trim() || undefined;
         const otlpUrl = document.getElementById('otlp-url').value.trim() || undefined;
 
-        // If no credentials provided, just navigate to the landing page
-        // (scenario is already running with env vars)
         if (!kibanaUrl && !apiKey) {
-            window.location.href = '/home';
+            window.location.href = '/home?deployment_id=' + selectedScenario;
             return;
         }
 
-        // Start deployment
         const launchBtn = document.getElementById('launch-btn');
         launchBtn.disabled = true;
         launchBtn.textContent = 'Deploying...';
@@ -657,6 +704,7 @@
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
+                    scenario_id: selectedScenario,
                     kibana_url: kibanaUrl,
                     api_key: apiKey,
                     elastic_url: esUrl,
@@ -673,9 +721,8 @@
                 return;
             }
 
-            // Show progress panel and start polling
             document.getElementById('progress-panel').classList.add('visible');
-            pollProgress();
+            pollProgress(data.deployment_id || selectedScenario);
         } catch (e) {
             const msg = document.getElementById('status-msg');
             msg.textContent = 'Launch error: ' + e.message;
@@ -707,9 +754,10 @@
         }).join('');
     }
 
-    async function pollProgress() {
+    async function pollProgress(deploymentId) {
         try {
-            const resp = await fetch('/api/setup/progress');
+            const url = deploymentId ? '/api/setup/progress?deployment_id=' + deploymentId : '/api/setup/progress';
+            const resp = await fetch(url);
             const data = await resp.json();
             renderProgress(data);
 
@@ -721,14 +769,82 @@
                 } else {
                     launchBtn.innerHTML = '<span class="btn-icon">&#10003;</span>Complete — Go to Dashboard';
                     launchBtn.disabled = false;
-                    launchBtn.onclick = () => { window.location.href = '/home'; };
+                    launchBtn.onclick = () => { window.location.href = '/home?deployment_id=' + (deploymentId || selectedScenario); };
+                    refreshDeployments();
                 }
                 return;
             }
         } catch (e) {}
 
-        // Poll every 1.5 seconds
-        setTimeout(pollProgress, 1500);
+        setTimeout(() => pollProgress(deploymentId), 1500);
+    }
+
+    async function stopAndTeardown(deploymentId) {
+        // Find the scenario name for display
+        const dep = activeDeployments.find(d => d.deployment_id === deploymentId);
+        const scenarioName = dep ? dep.scenario_name : deploymentId;
+        if (!confirm('Stop generators and remove artifacts for ' + scenarioName + '?')) return;
+
+        // Disable the teardown button to prevent double-clicks
+        const btns = document.querySelectorAll('button[onclick*="stopAndTeardown"]');
+        btns.forEach(b => { if (b.textContent.includes('Teardown')) b.disabled = true; });
+
+        // Show progress panel with teardown heading
+        const progressPanel = document.getElementById('progress-panel');
+        progressPanel.classList.add('visible');
+        progressPanel.querySelector('h2').textContent = 'Removing ' + scenarioName + '...';
+        document.getElementById('progress-steps').innerHTML =
+            '<div class="progress-step"><span class="step-icon running"><span class="spinner"></span></span><span class="step-name">Starting teardown...</span></div>';
+
+        // Hide connection panel so progress is prominent
+        document.getElementById('connection-panel').classList.remove('visible');
+
+        try {
+            const resp = await fetch('/api/setup/stop-and-teardown', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ deployment_id: deploymentId }),
+            });
+            const data = await resp.json();
+            if (data.status === 'stopping') {
+                pollTeardownProgress(deploymentId, scenarioName);
+            } else if (data.ok) {
+                // Legacy sync response (no credentials case)
+                progressPanel.classList.remove('visible');
+                const msg = document.getElementById('status-msg');
+                msg.textContent = 'Teardown complete for ' + scenarioName;
+                msg.className = 'status-msg visible ok';
+                refreshDeployments();
+            } else {
+                progressPanel.classList.remove('visible');
+                alert('Teardown failed: ' + (data.error || 'Unknown error'));
+            }
+        } catch (e) {
+            progressPanel.classList.remove('visible');
+            alert('Teardown error: ' + e.message);
+        }
+    }
+
+    async function pollTeardownProgress(deploymentId, scenarioName) {
+        try {
+            const resp = await fetch('/api/setup/teardown-progress?deployment_id=' + deploymentId);
+            const data = await resp.json();
+            renderProgress(data);
+
+            if (data.finished) {
+                const progressPanel = document.getElementById('progress-panel');
+                progressPanel.querySelector('h2').textContent = scenarioName + ' removed';
+                refreshDeployments();
+                // Hide progress after a short delay
+                setTimeout(() => {
+                    progressPanel.classList.remove('visible');
+                    progressPanel.querySelector('h2').textContent = 'Deployment Progress';
+                }, 3000);
+                return;
+            }
+        } catch (e) {}
+
+        setTimeout(() => pollTeardownProgress(deploymentId, scenarioName), 1500);
     }
 
     init();

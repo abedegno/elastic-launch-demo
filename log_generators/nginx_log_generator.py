@@ -19,7 +19,7 @@ import threading
 import time
 
 from app.telemetry import OTLPClient, _format_attributes, SCHEMA_URL, SCOPE_NAME, _now_ns
-from app.config import SEVERITY_MAP
+from app.config import SEVERITY_MAP, NAMESPACE
 
 # Span kind constants
 SPAN_KIND_SERVER = 2
@@ -42,7 +42,7 @@ ENDPOINTS = [
     "/api/v1/metrics",
     "/api/v1/traces",
     "/api/v1/logs",
-    "/api/v1/agents/nova7",
+    f"/api/v1/agents/{NAMESPACE}",
     "/api/v1/channels/status",
     "/api/v1/mission/countdown",
     "/api/v1/mission/abort",
@@ -87,7 +87,7 @@ USER_AGENTS = [
     "kube-probe/1.28",
 ]
 
-SERVER_NAMES = ["nova7-proxy-01", "nova7-proxy-02"]
+SERVER_NAMES = [f"{NAMESPACE}-proxy-01", f"{NAMESPACE}-proxy-02"]
 
 ERROR_MESSAGES = [
     "upstream timed out (110: Connection timed out) while connecting to upstream",
@@ -112,7 +112,7 @@ def _build_access_resource() -> dict:
     return {
         "attributes": _format_attributes({
             "service.name": "nginx-proxy",
-            "service.namespace": "nova7",
+            "service.namespace": NAMESPACE,
             "service.version": "1.25.4",
             "service.instance.id": "nginx-proxy-001",
             "telemetry.sdk.language": "python",
@@ -122,8 +122,8 @@ def _build_access_resource() -> dict:
             "cloud.platform": "gcp_compute_engine",
             "cloud.region": "us-central1",
             "cloud.availability_zone": "us-central1-a",
-            "deployment.environment": "production",
-            "host.name": "nova7-proxy-host",
+            "deployment.environment": f"production-{NAMESPACE}",
+            "host.name": f"{NAMESPACE}-proxy-host",
             "host.architecture": "amd64",
             "os.type": "linux",
             "data_stream.type": "logs",
@@ -138,7 +138,7 @@ def _build_error_resource() -> dict:
     return {
         "attributes": _format_attributes({
             "service.name": "nginx-proxy",
-            "service.namespace": "nova7",
+            "service.namespace": NAMESPACE,
             "service.version": "1.25.4",
             "service.instance.id": "nginx-proxy-001",
             "telemetry.sdk.language": "python",
@@ -148,8 +148,8 @@ def _build_error_resource() -> dict:
             "cloud.platform": "gcp_compute_engine",
             "cloud.region": "us-central1",
             "cloud.availability_zone": "us-central1-a",
-            "deployment.environment": "production",
-            "host.name": "nova7-proxy-host",
+            "deployment.environment": f"production-{NAMESPACE}",
+            "host.name": f"{NAMESPACE}-proxy-host",
             "host.architecture": "amd64",
             "os.type": "linux",
             "data_stream.type": "logs",
@@ -164,7 +164,7 @@ def _build_trace_resource() -> dict:
     return {
         "attributes": _format_attributes({
             "service.name": "nginx-proxy",
-            "service.namespace": "nova7",
+            "service.namespace": NAMESPACE,
             "service.version": "1.25.4",
             "service.instance.id": "nginx-proxy-001",
             "telemetry.sdk.language": "python",
@@ -174,8 +174,8 @@ def _build_trace_resource() -> dict:
             "cloud.platform": "gcp_compute_engine",
             "cloud.region": "us-central1",
             "cloud.availability_zone": "us-central1-a",
-            "deployment.environment": "production",
-            "host.name": "nova7-proxy-host",
+            "deployment.environment": f"production-{NAMESPACE}",
+            "host.name": f"{NAMESPACE}-proxy-host",
             "host.architecture": "amd64",
             "os.type": "linux",
             "data_stream.type": "traces",
@@ -229,7 +229,7 @@ def _generate_access_log(client: OTLPClient, rng: random.Random) -> tuple[dict, 
         "client.address": client_ip,
         "user_agent.original": ua,
         "server.address": server,
-        "url.domain": "nova7.internal",
+        "url.domain": f"{NAMESPACE}.internal",
         "network.protocol.name": "http",
         "network.protocol.version": "1.1",
         "upstream.address": upstream,

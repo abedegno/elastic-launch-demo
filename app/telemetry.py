@@ -92,11 +92,11 @@ class OTLPClient:
 
     # ── Resource helpers ───────────────────────────────────────────────
     @staticmethod
-    def build_resource(service_name: str, service_cfg: dict[str, Any]) -> dict[str, Any]:
+    def build_resource(service_name: str, service_cfg: dict[str, Any], namespace: str = "nova7") -> dict[str, Any]:
         """Build an OTLP resource object for a service."""
         attrs = {
             "service.name": service_name,
-            "service.namespace": "nova7",
+            "service.namespace": namespace,
             "service.version": "1.0.0",
             "service.instance.id": f"{service_name}-001",
             "telemetry.sdk.language": service_cfg.get("language", "python"),

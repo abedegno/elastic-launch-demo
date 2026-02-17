@@ -19,7 +19,9 @@ import threading
 import time
 
 from app.telemetry import OTLPClient, _format_attributes, SCHEMA_URL, _now_ns
-from app.config import SEVERITY_MAP
+from app.config import SEVERITY_MAP, NAMESPACE
+
+_DB_PREFIX = NAMESPACE.replace("-", "_")
 
 # Span kind constants
 SPAN_KIND_CLIENT = 3
@@ -35,22 +37,22 @@ BATCH_SIZE_MIN = 3
 BATCH_SIZE_MAX = 12
 
 # ── Realistic MySQL data pools ────────────────────────────────────────────────
-DATABASES = ["nova7_telemetry", "nova7_mission", "nova7_sensors", "nova7_audit"]
+DATABASES = [f"{_DB_PREFIX}_telemetry", f"{_DB_PREFIX}_mission", f"{_DB_PREFIX}_sensors", f"{_DB_PREFIX}_audit"]
 
 TABLES = {
-    "nova7_telemetry": [
+    f"{_DB_PREFIX}_telemetry": [
         "telemetry_readings", "sensor_data", "metric_snapshots",
         "log_entries", "trace_spans",
     ],
-    "nova7_mission": [
+    f"{_DB_PREFIX}_mission": [
         "mission_events", "countdown_phases", "launch_parameters",
         "abort_criteria", "hold_records",
     ],
-    "nova7_sensors": [
+    f"{_DB_PREFIX}_sensors": [
         "sensor_calibrations", "sensor_registry", "calibration_epochs",
         "sensor_thresholds", "validation_results",
     ],
-    "nova7_audit": [
+    f"{_DB_PREFIX}_audit": [
         "remediation_log", "escalation_log", "agent_actions",
         "operator_decisions", "safety_assessments",
     ],
@@ -74,10 +76,10 @@ PHASES = ["PRE-LAUNCH", "COUNTDOWN", "LAUNCH", "ASCENT"]
 
 ERROR_MESSAGES = [
     ("ERROR", "Got an error reading communication packets: Connection reset by peer"),
-    ("ERROR", "Aborted connection {conn_id} to db: '{db}' user: 'nova7_app' host: '{host}' (Got timeout reading communication packets)"),
+    ("ERROR", f"Aborted connection {{conn_id}} to db: '{{db}}' user: '{_DB_PREFIX}_app' host: '{{host}}' (Got timeout reading communication packets)"),
     ("WARNING", "Slave SQL: Error 'Duplicate entry' on query. Default database: '{db}'. Query: '{query}'"),
     ("ERROR", "Too many connections (max_connections=500, current={current})"),
-    ("WARNING", "Aborted connection {conn_id} to db: '{db}' user: 'nova7_reader' (Got an error writing communication packets)"),
+    ("WARNING", f"Aborted connection {{conn_id}} to db: '{{db}}' user: '{_DB_PREFIX}_reader' (Got an error writing communication packets)"),
     ("ERROR", "Lock wait timeout exceeded; try restarting transaction"),
     ("ERROR", "Deadlock found when trying to get lock; try restarting transaction"),
     ("WARNING", "InnoDB: page_cleaner: 1000ms intended loop took {loop_time}ms. The settings might not be optimal."),
@@ -88,12 +90,12 @@ ERROR_MESSAGES = [
 ]
 
 CLIENT_HOSTS = [
-    "nova7-app-01.internal:52341",
-    "nova7-app-02.internal:48892",
-    "nova7-worker-01.internal:55123",
-    "nova7-worker-02.internal:49001",
-    "nova7-cron.internal:60012",
-    "nova7-agent.internal:51887",
+    f"{NAMESPACE}-app-01.internal:52341",
+    f"{NAMESPACE}-app-02.internal:48892",
+    f"{NAMESPACE}-worker-01.internal:55123",
+    f"{NAMESPACE}-worker-02.internal:49001",
+    f"{NAMESPACE}-cron.internal:60012",
+    f"{NAMESPACE}-agent.internal:51887",
 ]
 
 # ── Resource builders ─────────────────────────────────────────────────────────
@@ -101,7 +103,7 @@ def _build_slowlog_resource() -> dict:
     return {
         "attributes": _format_attributes({
             "service.name": "mysql-primary",
-            "service.namespace": "nova7",
+            "service.namespace": NAMESPACE,
             "service.version": "8.0.36",
             "service.instance.id": "mysql-primary-001",
             "telemetry.sdk.language": "python",
@@ -111,8 +113,8 @@ def _build_slowlog_resource() -> dict:
             "cloud.platform": "gcp_compute_engine",
             "cloud.region": "us-central1",
             "cloud.availability_zone": "us-central1-b",
-            "deployment.environment": "production",
-            "host.name": "nova7-mysql-host",
+            "deployment.environment": f"production-{NAMESPACE}",
+            "host.name": f"{NAMESPACE}-mysql-host",
             "host.architecture": "amd64",
             "os.type": "linux",
             "data_stream.type": "logs",
@@ -127,7 +129,7 @@ def _build_error_resource() -> dict:
     return {
         "attributes": _format_attributes({
             "service.name": "mysql-primary",
-            "service.namespace": "nova7",
+            "service.namespace": NAMESPACE,
             "service.version": "8.0.36",
             "service.instance.id": "mysql-primary-001",
             "telemetry.sdk.language": "python",
@@ -137,8 +139,8 @@ def _build_error_resource() -> dict:
             "cloud.platform": "gcp_compute_engine",
             "cloud.region": "us-central1",
             "cloud.availability_zone": "us-central1-b",
-            "deployment.environment": "production",
-            "host.name": "nova7-mysql-host",
+            "deployment.environment": f"production-{NAMESPACE}",
+            "host.name": f"{NAMESPACE}-mysql-host",
             "host.architecture": "amd64",
             "os.type": "linux",
             "data_stream.type": "logs",
@@ -153,7 +155,7 @@ def _build_trace_resource() -> dict:
     return {
         "attributes": _format_attributes({
             "service.name": "mysql-primary",
-            "service.namespace": "nova7",
+            "service.namespace": NAMESPACE,
             "service.version": "8.0.36",
             "service.instance.id": "mysql-primary-001",
             "telemetry.sdk.language": "python",
@@ -163,8 +165,8 @@ def _build_trace_resource() -> dict:
             "cloud.platform": "gcp_compute_engine",
             "cloud.region": "us-central1",
             "cloud.availability_zone": "us-central1-b",
-            "deployment.environment": "production",
-            "host.name": "nova7-mysql-host",
+            "deployment.environment": f"production-{NAMESPACE}",
+            "host.name": f"{NAMESPACE}-mysql-host",
             "host.architecture": "amd64",
             "os.type": "linux",
             "data_stream.type": "traces",
@@ -216,7 +218,7 @@ def _generate_slow_query_log(client: OTLPClient, rng: random.Random) -> tuple[di
 
     body = (
         f"# Time: {time.strftime('%Y-%m-%dT%H:%M:%S.000000Z', time.gmtime())}\n"
-        f"# User@Host: nova7_app[nova7_app] @ {host}\n"
+        f"# User@Host: {_DB_PREFIX}_app[{_DB_PREFIX}_app] @ {host}\n"
         f"# Query_time: {query_time_s}  Lock_time: {lock_time_s}  "
         f"Rows_sent: {rows_sent}  Rows_examined: {rows_examined}\n"
         f"use {db};\n"
@@ -240,7 +242,7 @@ def _generate_slow_query_log(client: OTLPClient, rng: random.Random) -> tuple[di
         "mysql.slowlog.rows_examined": rows_examined,
         "client.address": host.split(":")[0],
         "client.port": int(host.split(":")[1]),
-        "db.user": "nova7_app",
+        "db.user": f"{_DB_PREFIX}_app",
     }
 
     log_record = client.build_log_record(
@@ -263,9 +265,9 @@ def _generate_slow_query_log(client: OTLPClient, rng: random.Random) -> tuple[di
             "db.statement": query,
             "db.operation": operation,
             "db.sql.table": table,
-            "net.peer.name": "nova7-mysql-host",
+            "net.peer.name": f"{NAMESPACE}-mysql-host",
             "net.peer.port": 3306,
-            "db.user": "nova7_app",
+            "db.user": f"{_DB_PREFIX}_app",
         },
     )
 

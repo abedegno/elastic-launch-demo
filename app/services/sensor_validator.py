@@ -9,7 +9,6 @@ from __future__ import annotations
 import random
 import time
 
-from app.config import CHANNEL_REGISTRY
 from app.services.base_service import BaseService
 
 
@@ -72,7 +71,7 @@ class SensorValidatorService(BaseService):
 
     def _emit_validation_failure(self, channel: int) -> None:
         """Emit additional validation-specific failure logs when a channel is active."""
-        ch = CHANNEL_REGISTRY.get(channel)
+        ch = self._channel_registry.get(channel)
         if not ch:
             return
         confidence = round(random.uniform(0.1, 0.5), 4)

@@ -914,6 +914,7 @@ class FanaticsScenario(BaseScenario):
         return {
             "id": "fanatics-infra-analyst",
             "name": "Infrastructure & Network Analyst",
+            "assessment_tool_name": "platform_load_assessment",
             "system_prompt": (
                 "You are the Fanatics Infrastructure & Network Analyst, an expert AI assistant "
                 "for enterprise network and infrastructure operations. You help NOC engineers "
@@ -928,12 +929,21 @@ class FanaticsScenario(BaseScenario):
         }
 
     @property
-    def tool_definitions(self) -> list[dict[str, Any]]:
-        return []  # Populated by setup scripts
+    def assessment_tool_config(self) -> dict[str, Any]:
+        return {
+            "id": "platform_load_assessment",
+            "description": (
+                "Comprehensive platform load assessment. Evaluates all "
+                "infrastructure services against event-day readiness criteria. "
+                "Returns data for load evaluation across networking, DNS, "
+                "VPN, firewall, and cloud infrastructure systems. "
+                "Log message field: body.text (never use 'body' alone)."
+            ),
+        }
 
     @property
     def knowledge_base_docs(self) -> list[dict[str, Any]]:
-        return []  # Populated by setup scripts
+        return []  # Populated by deployer from channel_registry
 
     # ── Service Classes ───────────────────────────────────────────────
 

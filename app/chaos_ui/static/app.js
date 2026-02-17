@@ -5,6 +5,10 @@
     let selectedChannel = null;
     let channelData = {};
 
+    // ── Deployment isolation ────────────────────────────────
+    const deployId = window.DEPLOYMENT_ID || '';
+    const qs = deployId ? '?deployment_id=' + encodeURIComponent(deployId) : '';
+
     // ── localStorage session isolation (namespace-scoped) ────
     const ns = window.SCENARIO_NAMESPACE || 'demo';
     const LS_KEY = ns + '_my_channels';
@@ -44,7 +48,7 @@
     }
 
     function fetchChannels() {
-        fetch('/api/chaos/status')
+        fetch('/api/chaos/status' + qs)
             .then(r => r.json())
             .then(data => {
                 channelData = data;
@@ -55,7 +59,7 @@
     }
 
     function fetchStatus() {
-        fetch('/api/chaos/status')
+        fetch('/api/chaos/status' + qs)
             .then(r => r.json())
             .then(data => {
                 channelData = data;
@@ -151,6 +155,7 @@
                 se_name: channelData[selectedChannel]?.name || '',
                 callback_url: callbackUrl,
                 user_email: userEmail,
+                deployment_id: deployId || undefined,
             }),
         })
             .then(r => r.json())
@@ -167,7 +172,7 @@
         fetch('/api/chaos/resolve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel: selectedChannel }),
+            body: JSON.stringify({ channel: selectedChannel, deployment_id: deployId || undefined }),
         })
             .then(r => r.json())
             .then(result => {
@@ -181,7 +186,7 @@
         fetch('/api/chaos/resolve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel: channel }),
+            body: JSON.stringify({ channel: channel, deployment_id: deployId || undefined }),
         })
             .then(r => r.json())
             .then(result => {

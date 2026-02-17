@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -96,22 +95,24 @@ class ScenarioDeployer:
         self.ns = scenario.namespace
         self.progress = DeployProgress()
         self._workflow_ids: dict[str, str] = {}  # name fragment -> workflow ID
+        self._created_tool_ids: list[str] = []   # tools that were actually created
 
     # ── Public API ─────────────────────────────────────────────────────
 
     def deploy_all(self, callback: ProgressCallback | None = None) -> DeployProgress:
         """Run the full deployment pipeline.  Returns progress summary."""
         self.progress = DeployProgress(steps=[
-            DeployStep("Connectivity check"),
-            DeployStep("Derive OTLP endpoint"),
-            DeployStep("Deploy workflows", items_total=3),
-            DeployStep("Deploy AI agent tools", items_total=7),
-            DeployStep("Create AI agent"),
-            DeployStep("Index knowledge base", items_total=20),
-            DeployStep("Create significant events", items_total=20),
-            DeployStep("Create data views"),
-            DeployStep("Import executive dashboard"),
-            DeployStep("Create alert rules", items_total=20),
+            DeployStep("Connectivity check"),           # 0
+            DeployStep("Derive OTLP endpoint"),         # 1
+            DeployStep("Clean up old artifacts"),       # 2
+            DeployStep("Deploy workflows", items_total=3),  # 3
+            DeployStep("Index knowledge base", items_total=20),  # 4
+            DeployStep("Deploy AI agent tools", items_total=7),  # 5
+            DeployStep("Create AI agent"),              # 6
+            DeployStep("Create significant events", items_total=20),  # 7
+            DeployStep("Create data views"),            # 8
+            DeployStep("Import executive dashboard"),   # 9
+            DeployStep("Create alert rules", items_total=20),  # 10
         ])
         _notify = callback or (lambda p: None)
         _notify(self.progress)
@@ -120,10 +121,11 @@ class ScenarioDeployer:
             with httpx.Client(timeout=60.0, verify=True) as client:
                 self._check_connectivity(client, _notify)
                 self._derive_otlp_step(client, _notify)
+                self._cleanup_all_scenarios_step(client, _notify)
                 self._deploy_workflows(client, _notify)
+                self._deploy_knowledge_base(client, _notify)
                 self._deploy_tools(client, _notify)
                 self._deploy_agent(client, _notify)
-                self._deploy_knowledge_base(client, _notify)
                 self._deploy_significant_events(client, _notify)
                 self._deploy_data_views(client, _notify)
                 self._deploy_dashboard(client, _notify)
@@ -220,6 +222,123 @@ class ScenarioDeployer:
 
         return results
 
+    def teardown_with_progress(self, callback: ProgressCallback | None = None) -> DeployProgress:
+        """Remove scenario resources with staged progress reporting."""
+        progress = DeployProgress(steps=[
+            DeployStep("Stop generators"),              # 0
+            DeployStep("Delete workflows"),             # 1
+            DeployStep("Delete alert rules"),           # 2
+            DeployStep("Delete significant events"),    # 3
+            DeployStep("Delete AI agent & tools"),      # 4
+            DeployStep("Delete knowledge base"),        # 5
+            DeployStep("Delete audit indices"),         # 6
+        ])
+        _notify = callback or (lambda p: None)
+        _notify(progress)
+
+        # Step 0: generators — caller stops them before invoking this method
+        progress.steps[0].status = "ok"
+        progress.steps[0].detail = "Generators stopped"
+        _notify(progress)
+
+        try:
+            with httpx.Client(timeout=30.0, verify=True) as client:
+                # Step 1: Delete workflows
+                step = progress.steps[1]
+                step.status = "running"
+                _notify(progress)
+                try:
+                    deleted = self._cleanup_workflows(client)
+                    step.status = "ok"
+                    step.detail = f"Deleted {deleted} workflows"
+                except Exception as exc:
+                    step.status = "failed"
+                    step.detail = str(exc)
+                _notify(progress)
+
+                # Step 2: Delete alert rules
+                step = progress.steps[2]
+                step.status = "running"
+                _notify(progress)
+                try:
+                    deleted = self._cleanup_alerts(client)
+                    step.status = "ok"
+                    step.detail = f"Deleted {deleted} alert rules"
+                except Exception as exc:
+                    step.status = "failed"
+                    step.detail = str(exc)
+                _notify(progress)
+
+                # Step 3: Delete significant events
+                step = progress.steps[3]
+                step.status = "running"
+                _notify(progress)
+                try:
+                    self._cleanup_significant_events(client)
+                    step.status = "ok"
+                    step.detail = "Stream queries removed"
+                except Exception as exc:
+                    step.status = "failed"
+                    step.detail = str(exc)
+                _notify(progress)
+
+                # Step 4: Delete agent + tools
+                step = progress.steps[4]
+                step.status = "running"
+                _notify(progress)
+                try:
+                    self._cleanup_agent(client)
+                    step.status = "ok"
+                    step.detail = "Agent and tools removed"
+                except Exception as exc:
+                    step.status = "failed"
+                    step.detail = str(exc)
+                _notify(progress)
+
+                # Step 5: Delete knowledge base
+                step = progress.steps[5]
+                step.status = "running"
+                _notify(progress)
+                try:
+                    resp = client.delete(
+                        f"{self.elastic_url}/{self.ns}-knowledge-base",
+                        headers=_es_headers(self.api_key),
+                    )
+                    step.status = "ok"
+                    step.detail = "KB index deleted" if resp.status_code < 300 else "KB index not found"
+                except Exception as exc:
+                    step.status = "failed"
+                    step.detail = str(exc)
+                _notify(progress)
+
+                # Step 6: Delete audit indices
+                step = progress.steps[6]
+                step.status = "running"
+                _notify(progress)
+                try:
+                    deleted = 0
+                    for suffix in ["significant-events-audit", "remediation-audit", "escalation-audit"]:
+                        r = client.delete(
+                            f"{self.elastic_url}/{self.ns}-{suffix}",
+                            headers=_es_headers(self.api_key),
+                        )
+                        if r.status_code < 300:
+                            deleted += 1
+                    step.status = "ok"
+                    step.detail = f"Deleted {deleted} audit indices"
+                except Exception as exc:
+                    step.status = "failed"
+                    step.detail = str(exc)
+                _notify(progress)
+
+        except Exception as exc:
+            progress.error = str(exc)
+            logger.exception("Teardown failed")
+
+        progress.finished = True
+        _notify(progress)
+        return progress
+
     # ── Step implementations ───────────────────────────────────────────
 
     def _step(self, idx: int) -> DeployStep:
@@ -306,7 +425,7 @@ class ScenarioDeployer:
     # ── Workflows ──────────────────────────────────────────────────────
 
     def _deploy_workflows(self, client: httpx.Client, notify: ProgressCallback):
-        step = self._step(2)
+        step = self._step(3)
         step.status = "running"
         notify(self.progress)
 
@@ -362,14 +481,9 @@ class ScenarioDeployer:
                 with open(os.path.join(wf_dir, fname)) as f:
                     yaml_content = f.read()
                 # Template substitutions
-                yaml_content = yaml_content.replace("NOVA-7", scenario_name)
-                yaml_content = yaml_content.replace("nova7-launch-anomaly-analyst", agent_id)
-                yaml_content = yaml_content.replace("nova7-", f"{ns}-")
-                yaml_content = re.sub(
-                    r'mission_id:\s*"NOVA-7"',
-                    f'mission_id: "{scenario_name}"',
-                    yaml_content,
-                )
+                yaml_content = yaml_content.replace("__SCENARIO_NAME__", scenario_name)
+                yaml_content = yaml_content.replace("__AGENT_ID__", agent_id)
+                yaml_content = yaml_content.replace("__NS__", ns)
                 key = fname.replace(".yaml", "")
                 workflows[key] = yaml_content
         else:
@@ -602,191 +716,14 @@ steps:
     # ── Tools ──────────────────────────────────────────────────────────
 
     def _deploy_tools(self, client: httpx.Client, notify: ProgressCallback):
-        step = self._step(3)
+        step = self._step(5)
         step.status = "running"
         notify(self.progress)
 
-        tools = self._generate_tool_definitions()
-        step.items_total = len(tools)
+        # Use scenario-provided tool definitions + deployer-added workflow tools
+        tools = list(self.scenario.tool_definitions)
 
-        for tool_def in tools:
-            tool_id = tool_def["id"]
-            # Delete first, then create
-            client.delete(
-                f"{self.kibana_url}/api/agent_builder/tools/{tool_id}",
-                headers=_kibana_headers(self.api_key),
-            )
-            resp = client.post(
-                f"{self.kibana_url}/api/agent_builder/tools",
-                headers=_kibana_headers(self.api_key),
-                json=tool_def,
-            )
-            if resp.status_code < 300:
-                step.items_done += 1
-                step.detail = f"Created: {tool_id}"
-            else:
-                step.detail = f"Failed: {tool_id} (HTTP {resp.status_code})"
-                logger.warning("Tool %s failed: %s", tool_id, resp.text[:200])
-            notify(self.progress)
-
-        step.status = "ok" if step.items_done > 0 else "failed"
-        notify(self.progress)
-
-    def _generate_tool_definitions(self) -> list[dict[str, Any]]:
-        """Auto-generate agent tools from scenario properties."""
-        svc_names = ", ".join(sorted(self.scenario.services.keys()))
-        kb_index = f"{self.ns}-knowledge-base"
-
-        tools = [
-            {
-                "id": "search_error_logs",
-                "type": "esql",
-                "description": (
-                    f"Search telemetry logs for a specific error or exception type. "
-                    f"Returns the 50 most recent ERROR-level log entries matching the "
-                    f"error type. Services: {svc_names}. "
-                    f"The error_type parameter is matched against body.text."
-                ),
-                "configuration": {
-                    "query": (
-                        'FROM logs,logs.* '
-                        '| WHERE @timestamp > NOW() - 15 MINUTES '
-                        'AND body.text LIKE ?error_type AND severity_text == "ERROR" '
-                        '| KEEP @timestamp, body.text, service.name, severity_text, event_name '
-                        '| SORT @timestamp DESC | LIMIT 50'
-                    ),
-                    "params": {
-                        "error_type": {
-                            "description": "Wildcard pattern for the error type, e.g. *FuelPressureException*",
-                            "type": "string",
-                            "optional": False,
-                        }
-                    },
-                },
-            },
-            {
-                "id": "search_subsystem_health",
-                "type": "esql",
-                "description": (
-                    f"Query health status by aggregating recent telemetry. "
-                    f"Returns error/warning counts per service. "
-                    f"Services: {svc_names}. "
-                    f"Log message field: body.text (never use 'body' alone)."
-                ),
-                "configuration": {
-                    "query": (
-                        'FROM logs,logs.* '
-                        '| WHERE @timestamp > NOW() - 15 MINUTES '
-                        '| STATS error_count = COUNT(*) WHERE severity_text == "ERROR", '
-                        'warn_count = COUNT(*) WHERE severity_text == "WARN", '
-                        'total = COUNT(*) BY service.name '
-                        '| SORT error_count DESC'
-                    ),
-                    "params": {},
-                },
-            },
-            {
-                "id": "search_service_logs",
-                "type": "esql",
-                "description": (
-                    f"Search telemetry logs for a specific service. "
-                    f"Returns the 50 most recent ERROR and WARN entries. "
-                    f"Available services: {svc_names}."
-                ),
-                "configuration": {
-                    "query": (
-                        'FROM logs,logs.* '
-                        '| WHERE @timestamp > NOW() - 15 MINUTES '
-                        'AND service.name == ?service_name '
-                        'AND severity_text IN ("ERROR", "WARN") '
-                        '| KEEP @timestamp, body.text, service.name, severity_text '
-                        '| SORT @timestamp DESC | LIMIT 50'
-                    ),
-                    "params": {
-                        "service_name": {
-                            "description": f"The service to investigate ({svc_names})",
-                            "type": "string",
-                            "optional": False,
-                        }
-                    },
-                },
-            },
-            {
-                "id": "search_known_anomalies",
-                "type": "index_search",
-                "description": (
-                    f"Search the knowledge base for documented anomalies, failure "
-                    f"patterns, and resolution procedures. Contains RCA guides for "
-                    f"all 20 fault channels."
-                ),
-                "configuration": {
-                    "pattern": kb_index,
-                },
-            },
-            {
-                "id": "trace_anomaly_propagation",
-                "type": "esql",
-                "description": (
-                    "Trace the propagation path of anomalies across services. "
-                    "Shows which services have errors and warnings over time to "
-                    "identify cascade chains. "
-                    "Log message field: body.text (never use 'body' alone)."
-                ),
-                "configuration": {
-                    "query": (
-                        'FROM logs,logs.* '
-                        '| WHERE @timestamp > NOW() - 15 MINUTES '
-                        'AND severity_text IN ("ERROR", "WARN") '
-                        '| STATS error_count = COUNT(*) WHERE severity_text == "ERROR", '
-                        'warn_count = COUNT(*) WHERE severity_text == "WARN" '
-                        'BY service.name | SORT error_count DESC'
-                    ),
-                    "params": {},
-                },
-            },
-            {
-                "id": "launch_safety_assessment",
-                "type": "esql",
-                "description": (
-                    "Comprehensive operational safety assessment. Evaluates all "
-                    "services against operational health criteria. Returns data "
-                    "for GO/NO-GO evaluation. "
-                    "Log message field: body.text (never use 'body' alone)."
-                ),
-                "configuration": {
-                    "query": (
-                        'FROM logs,logs.* '
-                        '| WHERE @timestamp > NOW() - 15 MINUTES '
-                        'AND severity_text IN ("ERROR", "WARN") '
-                        '| STATS error_count = COUNT(*) WHERE severity_text == "ERROR", '
-                        'warn_count = COUNT(*) WHERE severity_text == "WARN" '
-                        'BY service.name | SORT error_count DESC'
-                    ),
-                    "params": {},
-                },
-            },
-            {
-                "id": "browse_recent_errors",
-                "type": "esql",
-                "description": (
-                    "Browse all recent ERROR and WARN log entries across all services. "
-                    "Use for general situation awareness when you do not yet know the "
-                    "specific error type or service."
-                ),
-                "configuration": {
-                    "query": (
-                        'FROM logs,logs.* '
-                        '| WHERE @timestamp > NOW() - 15 MINUTES '
-                        'AND severity_text IN ("ERROR", "WARN") '
-                        '| KEEP @timestamp, body.text, service.name, severity_text '
-                        '| SORT @timestamp DESC | LIMIT 50'
-                    ),
-                    "params": {},
-                },
-            },
-        ]
-
-        # Add workflow tools if we have workflow IDs
+        # Add workflow tools (need workflow IDs from deployment)
         for name_frag, wf_id in self._workflow_ids.items():
             if "remediation" in name_frag:
                 tools.append({
@@ -808,12 +745,36 @@ steps:
                     "configuration": {"workflow_id": wf_id},
                 })
 
-        return tools
+        step.items_total = len(tools)
+
+        for tool_def in tools:
+            tool_id = tool_def["id"]
+            # Delete first, then create
+            client.delete(
+                f"{self.kibana_url}/api/agent_builder/tools/{tool_id}",
+                headers=_kibana_headers(self.api_key),
+            )
+            resp = client.post(
+                f"{self.kibana_url}/api/agent_builder/tools",
+                headers=_kibana_headers(self.api_key),
+                json=tool_def,
+            )
+            if resp.status_code < 300:
+                step.items_done += 1
+                step.detail = f"Created: {tool_id}"
+                self._created_tool_ids.append(tool_id)
+            else:
+                step.detail = f"Failed: {tool_id} (HTTP {resp.status_code})"
+                logger.warning("Tool %s failed: %s", tool_id, resp.text[:200])
+            notify(self.progress)
+
+        step.status = "ok" if step.items_done > 0 else "failed"
+        notify(self.progress)
 
     # ── Agent ──────────────────────────────────────────────────────────
 
     def _deploy_agent(self, client: httpx.Client, notify: ProgressCallback):
-        step = self._step(4)
+        step = self._step(6)
         step.status = "running"
         notify(self.progress)
 
@@ -823,20 +784,8 @@ steps:
         # Build full system prompt from scenario properties
         system_prompt = self._generate_system_prompt(agent_cfg)
 
-        # Collect tool IDs
-        tool_ids = [
-            "search_error_logs",
-            "search_service_logs",
-            "browse_recent_errors",
-            "search_subsystem_health",
-            "search_known_anomalies",
-            "trace_anomaly_propagation",
-            "launch_safety_assessment",
-        ]
-        if "remediation_action" in [t["id"] for t in self._generate_tool_definitions()]:
-            tool_ids.append("remediation_action")
-        if "escalation_action" in [t["id"] for t in self._generate_tool_definitions()]:
-            tool_ids.append("escalation_action")
+        # Use only tools that were actually created successfully (Bug 4+5 fix)
+        tool_ids = list(self._created_tool_ids)
         tool_ids.append("platform.core.cases")
 
         agent_body = {
@@ -894,6 +843,12 @@ steps:
             f"an expert AI agent embedded in the Elastic observability platform."
         )
 
+        # Scenario-specific assessment tool name
+        assessment_tool = agent_cfg.get(
+            "assessment_tool_name",
+            scenario.assessment_tool_config.get("id", "operational_assessment"),
+        )
+
         return f"""{identity}
 
 ## Mission Context
@@ -918,7 +873,7 @@ steps:
 3. **General awareness** → `browse_recent_errors` or `search_subsystem_health`
 4. **Historical patterns** → `search_known_anomalies` — knowledge base lookup
 5. **Cascade analysis** → `trace_anomaly_propagation` — cross-service correlation
-6. **Operational readiness** → `launch_safety_assessment` — GO/NO-GO evaluation
+6. **Operational readiness** → `{assessment_tool}` — overall system health evaluation
 Do NOT write custom ES|QL queries. Use the parameterized tools.
 
 ## Root Cause Analysis Methodology
@@ -946,7 +901,7 @@ Do NOT write custom ES|QL queries. Use the parameterized tools.
     # ── Knowledge Base ─────────────────────────────────────────────────
 
     def _deploy_knowledge_base(self, client: httpx.Client, notify: ProgressCallback):
-        step = self._step(5)
+        step = self._step(4)
         step.status = "running"
         notify(self.progress)
 
@@ -1058,7 +1013,7 @@ Do NOT write custom ES|QL queries. Use the parameterized tools.
     # ── Significant Events ─────────────────────────────────────────────
 
     def _deploy_significant_events(self, client: httpx.Client, notify: ProgressCallback):
-        step = self._step(6)
+        step = self._step(7)
         step.status = "running"
         notify(self.progress)
 
@@ -1107,7 +1062,7 @@ Do NOT write custom ES|QL queries. Use the parameterized tools.
     # ── Data Views ─────────────────────────────────────────────────────
 
     def _deploy_data_views(self, client: httpx.Client, notify: ProgressCallback):
-        step = self._step(7)
+        step = self._step(8)
         step.status = "running"
         notify(self.progress)
 
@@ -1149,40 +1104,21 @@ Do NOT write custom ES|QL queries. Use the parameterized tools.
     # ── Dashboard ──────────────────────────────────────────────────────
 
     def _deploy_dashboard(self, client: httpx.Client, notify: ProgressCallback):
-        step = self._step(8)
+        step = self._step(9)
         step.status = "running"
         notify(self.progress)
 
-        # Try to find and import the NDJSON file
-        ndjson_path = os.path.join(
-            os.path.dirname(__file__), "..",
-            "elastic-config", "dashboards", "exec-dashboard.ndjson",
-        )
-        ndjson_path = os.path.normpath(ndjson_path)
+        try:
+            # Generate scenario-specific dashboard NDJSON dynamically
+            import sys
+            gen_dir = os.path.normpath(os.path.join(
+                os.path.dirname(__file__), "..", "elastic-config", "dashboards",
+            ))
+            if gen_dir not in sys.path:
+                sys.path.insert(0, gen_dir)
+            from generate_exec_dashboard import generate_dashboard_ndjson
 
-        if not os.path.exists(ndjson_path):
-            # Try generating it
-            gen_script = os.path.join(
-                os.path.dirname(__file__), "..",
-                "elastic-config", "dashboards", "generate_exec_dashboard.py",
-            )
-            gen_script = os.path.normpath(gen_script)
-            if os.path.exists(gen_script):
-                import subprocess
-                subprocess.run(
-                    ["python3", gen_script],
-                    cwd=os.path.dirname(gen_script),
-                    capture_output=True,
-                )
-
-        if os.path.exists(ndjson_path):
-            # Read and template the NDJSON
-            with open(ndjson_path, "rb") as f:
-                ndjson_content = f.read()
-
-            # Substitute namespace in dashboard ID
-            ndjson_str = ndjson_content.decode("utf-8", errors="replace")
-            ndjson_str = ndjson_str.replace("nova7-exec-dashboard", f"{self.ns}-exec-dashboard")
+            ndjson_str = generate_dashboard_ndjson(self.scenario)
 
             resp = client.post(
                 f"{self.kibana_url}/api/saved_objects/_import?overwrite=true",
@@ -1196,23 +1132,24 @@ Do NOT write custom ES|QL queries. Use the parameterized tools.
                 try:
                     data = resp.json()
                     count = data.get("successCount", 0)
-                    step.detail = f"Imported {count} objects"
+                    step.detail = f"Imported {count} objects ({self.scenario.scenario_name})"
                 except Exception:
                     step.detail = "Dashboard imported"
                 step.status = "ok"
             else:
                 step.status = "failed"
                 step.detail = f"Import failed (HTTP {resp.status_code})"
-        else:
-            step.status = "skipped"
-            step.detail = "NDJSON file not found"
+        except Exception as exc:
+            step.status = "failed"
+            step.detail = f"Dashboard generation failed: {exc}"
+            logger.exception("Dashboard generation failed")
 
         notify(self.progress)
 
     # ── Alerting ───────────────────────────────────────────────────────
 
     def _deploy_alerting(self, client: httpx.Client, notify: ProgressCallback):
-        step = self._step(9)
+        step = self._step(10)
         step.status = "running"
         notify(self.progress)
 
@@ -1338,6 +1275,191 @@ Do NOT write custom ES|QL queries. Use the parameterized tools.
         step.detail = f"Created {step.items_done}/{step.items_total} alert rules"
         notify(self.progress)
 
+    # ── Cross-scenario cleanup ────────────────────────────────────────
+
+    def _cleanup_all_scenarios_step(self, client: httpx.Client, notify: ProgressCallback):
+        """Deploy step: clean up artifacts from ALL known scenarios."""
+        step = self._step(2)
+        step.status = "running"
+        notify(self.progress)
+
+        try:
+            deleted = self._cleanup_all_scenarios(client)
+            step.status = "ok"
+            step.detail = f"Cleaned {deleted} artifacts"
+        except Exception as exc:
+            step.status = "ok"  # non-fatal — continue deploying
+            step.detail = f"Partial cleanup: {exc}"
+            logger.warning("Cleanup error (non-fatal): %s", exc)
+        notify(self.progress)
+
+    def _cleanup_all_scenarios(self, client: httpx.Client) -> int:
+        """Delete artifacts for ALL known scenarios (not just the current one)."""
+        from scenarios import get_scenario, list_scenarios
+
+        all_scenarios = list_scenarios()
+        deleted = 0
+
+        # Collect all namespaces, scenario names, and agent IDs
+        all_namespaces = []
+        all_scenario_names = []
+        all_agent_ids = []
+        for s_meta in all_scenarios:
+            try:
+                s = get_scenario(s_meta["id"])
+                all_namespaces.append(s.namespace)
+                all_scenario_names.append(s.scenario_name)
+                agent_id = s.agent_config.get("id", f"{s.namespace}-analyst")
+                all_agent_ids.append(agent_id)
+            except Exception:
+                pass
+
+        # Delete alert rules tagged with ANY known namespace
+        for ns in all_namespaces:
+            try:
+                for page in range(1, 11):
+                    resp = client.get(
+                        f"{self.kibana_url}/api/alerting/rules/_find?per_page=100&page={page}&filter=alert.attributes.tags:{ns}",
+                        headers=_kibana_headers(self.api_key),
+                    )
+                    if resp.status_code >= 300:
+                        break
+                    rules = resp.json().get("data", [])
+                    if not rules:
+                        break
+                    for rule in rules:
+                        rule_id = rule.get("id", "")
+                        if rule_id:
+                            client.delete(
+                                f"{self.kibana_url}/api/alerting/rule/{rule_id}",
+                                headers=_kibana_headers(self.api_key),
+                            )
+                            deleted += 1
+            except Exception:
+                pass
+
+        # Delete stream queries with ANY known namespace prefix
+        try:
+            resp = client.get(
+                f"{self.kibana_url}/api/streams/logs/queries",
+                headers=_kibana_headers(self.api_key),
+            )
+            if resp.status_code < 300:
+                data = resp.json()
+                queries = data if isinstance(data, list) else data.get("queries", [])
+                for q in queries:
+                    qid = q.get("id", "")
+                    for ns in all_namespaces:
+                        if qid.startswith(f"{ns}-se-"):
+                            client.delete(
+                                f"{self.kibana_url}/api/streams/logs/queries/{qid}",
+                                headers=_kibana_headers(self.api_key),
+                            )
+                            deleted += 1
+                            break
+        except Exception:
+            pass
+
+        # Delete workflows matching ANY known scenario name
+        try:
+            resp = client.post(
+                f"{self.kibana_url}/api/workflows/search",
+                headers=_kibana_headers(self.api_key),
+                json={"page": 1, "size": 100},
+            )
+            if resp.status_code < 300:
+                data = resp.json()
+                items = data if isinstance(data, list) else data.get("results", data.get("items", []))
+                for item in items:
+                    wf_name = item.get("name", "")
+                    for sn in all_scenario_names:
+                        if sn in wf_name:
+                            wf_id = item.get("id", "")
+                            if wf_id:
+                                client.delete(
+                                    f"{self.kibana_url}/api/workflows/{wf_id}",
+                                    headers=_kibana_headers(self.api_key),
+                                )
+                                deleted += 1
+                            break
+        except Exception:
+            pass
+
+        # Delete ALL known agent IDs
+        for agent_id in all_agent_ids:
+            try:
+                r = client.delete(
+                    f"{self.kibana_url}/api/agent_builder/agents/{agent_id}",
+                    headers=_kibana_headers(self.api_key),
+                )
+                if r.status_code < 300:
+                    deleted += 1
+            except Exception:
+                pass
+
+        # Delete ALL known tool IDs (shared + scenario-specific)
+        all_tool_ids = {
+            "search_error_logs", "search_subsystem_health", "search_service_logs",
+            "search_known_anomalies", "trace_anomaly_propagation",
+            "browse_recent_errors", "remediation_action", "escalation_action",
+        }
+        # Add each scenario's assessment tool ID
+        for s_meta in all_scenarios:
+            try:
+                s = get_scenario(s_meta["id"])
+                all_tool_ids.add(s.assessment_tool_config["id"])
+            except Exception:
+                pass
+        for tool_id in all_tool_ids:
+            try:
+                client.delete(
+                    f"{self.kibana_url}/api/agent_builder/tools/{tool_id}",
+                    headers=_kibana_headers(self.api_key),
+                )
+            except Exception:
+                pass
+
+        # Delete ALL known KB indices and audit indices
+        for ns in all_namespaces:
+            for suffix in [
+                "knowledge-base",
+                "significant-events-audit",
+                "remediation-audit",
+                "escalation-audit",
+            ]:
+                try:
+                    r = client.delete(
+                        f"{self.elastic_url}/{ns}-{suffix}",
+                        headers=_es_headers(self.api_key),
+                    )
+                    if r.status_code < 300:
+                        deleted += 1
+                except Exception:
+                    pass
+
+        logger.info("Cleaned up %d artifacts across all scenarios", deleted)
+        return deleted
+
+    @classmethod
+    def cleanup_all(cls, elastic_url: str, kibana_url: str, api_key: str) -> dict[str, Any]:
+        """Class method: clean up ALL scenario artifacts without needing a specific scenario."""
+        from scenarios import get_scenario, list_scenarios
+
+        all_scenarios = list_scenarios()
+        if not all_scenarios:
+            return {"ok": True, "deleted": 0}
+
+        # Use the first scenario just to get a deployer instance
+        first = get_scenario(all_scenarios[0]["id"])
+        deployer = cls(first, elastic_url, kibana_url, api_key)
+
+        try:
+            with httpx.Client(timeout=60.0, verify=True) as client:
+                deleted = deployer._cleanup_all_scenarios(client)
+            return {"ok": True, "deleted": deleted}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     # ── Cleanup helpers ────────────────────────────────────────────────
 
     def _cleanup_workflows(self, client: httpx.Client) -> int:
@@ -1401,12 +1523,10 @@ Do NOT write custom ES|QL queries. Use the parameterized tools.
             f"{self.kibana_url}/api/agent_builder/agents/{agent_id}",
             headers=_kibana_headers(self.api_key),
         )
-        for tool_id in [
-            "search_error_logs", "search_subsystem_health", "search_service_logs",
-            "search_known_anomalies", "trace_anomaly_propagation",
-            "launch_safety_assessment", "browse_recent_errors",
-            "remediation_action", "escalation_action",
-        ]:
+        # Collect tool IDs from scenario's tool_definitions + workflow tools
+        tool_ids = [t["id"] for t in self.scenario.tool_definitions]
+        tool_ids.extend(["remediation_action", "escalation_action"])
+        for tool_id in tool_ids:
             client.delete(
                 f"{self.kibana_url}/api/agent_builder/tools/{tool_id}",
                 headers=_kibana_headers(self.api_key),

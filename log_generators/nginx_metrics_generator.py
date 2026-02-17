@@ -21,6 +21,7 @@ import threading
 import time
 
 from app.telemetry import OTLPClient, _format_attributes, SCHEMA_URL, _now_ns
+from app.config import NAMESPACE
 
 logger = logging.getLogger("nginx-metrics-generator")
 
@@ -29,10 +30,10 @@ METRICS_INTERVAL = int(os.getenv("NGINX_METRICS_INTERVAL", "10"))
 SCOPE_NAME = "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/nginxreceiver"
 SCOPE_VERSION = "0.115.0"
 
-# Two nginx instances across different hosts
+# Two nginx instances across different hosts (derived from active scenario)
 NGINX_HOSTS = [
     {
-        "host.name": "nova7-nginx-01",
+        "host.name": f"{NAMESPACE}-nginx-01",
         "service.name": "nginx-proxy",
         "service.instance.id": "nginx-proxy-001",
         "cloud.provider": "aws",
@@ -40,7 +41,7 @@ NGINX_HOSTS = [
         "cloud.region": "us-east-1",
     },
     {
-        "host.name": "nova7-nginx-02",
+        "host.name": f"{NAMESPACE}-nginx-02",
         "service.name": "nginx-proxy",
         "service.instance.id": "nginx-proxy-002",
         "cloud.provider": "gcp",

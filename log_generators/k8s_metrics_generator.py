@@ -279,9 +279,9 @@ def _generate_deployment_metrics(rng: random.Random) -> list:
 # ── Additional workload resources + metrics for donut charts ─────────────────
 
 # DaemonSets: 2 system-level daemonsets
-DAEMONSETS = ["nova7-log-collector", "nova7-node-exporter"]
+DAEMONSETS = [f"{NAMESPACE}-log-collector", f"{NAMESPACE}-node-exporter"]
 # StatefulSets: 2 stateful services
-STATEFULSETS = ["nova7-redis", "nova7-postgres"]
+STATEFULSETS = [f"{NAMESPACE}-redis", f"{NAMESPACE}-postgres"]
 
 
 def _build_daemonset_resource(ds_name: str, cluster: dict) -> dict:
@@ -467,23 +467,25 @@ def _generate_k8s_warning_logs(client: OTLPClient, pod_data: dict, cluster: dict
 
 # ── Run loop ─────────────────────────────────────────────────────────────────
 
-def run(client: OTLPClient, stop_event: threading.Event) -> None:
+def run(client: OTLPClient, stop_event: threading.Event, scenario_data: dict | None = None) -> None:
     """Run K8s metrics generator loop until stop_event is set."""
     rng = random.Random()
     state = K8sState(rng)
+
+    clusters = scenario_data["k8s_clusters"] if scenario_data else CLUSTERS
 
     # Initialize per-cluster pod data
     cluster_data = []
     total_services = 0
     total_nodes = 0
-    for idx, cluster in enumerate(CLUSTERS):
+    for idx, cluster in enumerate(clusters):
         pod_data = _init_pod_data(cluster, seed_offset=idx)
         cluster_data.append((cluster, pod_data))
         total_services += len(cluster["services"])
         total_nodes += len(pod_data["node_names"])
 
     logger.info("K8s metrics generator started (interval=%ds, clusters=%d, services=%d, nodes=%d)",
-                METRICS_INTERVAL, len(CLUSTERS), total_services, total_nodes)
+                METRICS_INTERVAL, len(clusters), total_services, total_nodes)
 
     scrape_count = 0
     while not stop_event.is_set():

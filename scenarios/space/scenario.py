@@ -746,6 +746,7 @@ class SpaceScenario(BaseScenario):
         return {
             "id": "nova7-launch-analyst",
             "name": "Launch Anomaly Analyst",
+            "assessment_tool_name": "launch_safety_assessment",
             "system_prompt": (
                 "You are the NOVA-7 Launch Anomaly Analyst, an expert AI assistant for "
                 "space launch mission operations. You help mission controllers investigate "
@@ -755,12 +756,20 @@ class SpaceScenario(BaseScenario):
         }
 
     @property
-    def tool_definitions(self) -> list[dict[str, Any]]:
-        return []  # Populated by setup scripts
+    def assessment_tool_config(self) -> dict[str, Any]:
+        return {
+            "id": "launch_safety_assessment",
+            "description": (
+                "Comprehensive launch safety assessment. Evaluates all "
+                "services against launch readiness criteria. Returns data "
+                "for GO/NO-GO evaluation. "
+                "Log message field: body.text (never use 'body' alone)."
+            ),
+        }
 
     @property
     def knowledge_base_docs(self) -> list[dict[str, Any]]:
-        return []  # Populated by setup scripts
+        return []  # Populated by deployer from channel_registry
 
     # ── Service Classes ───────────────────────────────────────────────
 

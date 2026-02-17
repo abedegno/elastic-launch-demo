@@ -785,6 +785,7 @@ class HealthcareScenario(BaseScenario):
         return {
             "id": "healthcare-clinical-analyst",
             "name": "Clinical Systems Analyst",
+            "assessment_tool_name": "patient_safety_assessment",
             "system_prompt": (
                 "You are the Clinical Systems Analyst, an expert AI assistant for "
                 "hospital clinical operations. You help IT operations teams investigate "
@@ -800,12 +801,21 @@ class HealthcareScenario(BaseScenario):
         }
 
     @property
-    def tool_definitions(self) -> list[dict[str, Any]]:
-        return []  # Populated by setup scripts
+    def assessment_tool_config(self) -> dict[str, Any]:
+        return {
+            "id": "patient_safety_assessment",
+            "description": (
+                "Comprehensive patient safety assessment. Evaluates all "
+                "clinical systems against operational health criteria for patient care "
+                "continuity. Returns data for safety evaluation across EHR, patient "
+                "monitoring, laboratory, pharmacy, and imaging systems. "
+                "Log message field: body.text (never use 'body' alone)."
+            ),
+        }
 
     @property
     def knowledge_base_docs(self) -> list[dict[str, Any]]:
-        return []  # Populated by setup scripts
+        return []  # Populated by deployer from channel_registry
 
     # -- Service Classes --------------------------------------------------------
 

@@ -221,5 +221,20 @@
         <a href="/">Scenario Selector</a>
     </footer>
 
+    <script>
+        window.DEPLOYMENT_ID = 'DEPLOYMENT_ID_PLACEHOLDER';
+        (function() {
+            var did = window.DEPLOYMENT_ID;
+            if (!did) return;
+            var qs = '?deployment_id=' + encodeURIComponent(did);
+            document.querySelectorAll('a[href]').forEach(function(a) {
+                var href = a.getAttribute('href');
+                // Only update local non-external links that don't already have query params
+                if (href && href.startsWith('/') && !href.startsWith('//') && href.indexOf('?') === -1) {
+                    a.setAttribute('href', href + qs);
+                }
+            });
+        })();
+    </script>
 </body>
 </html>

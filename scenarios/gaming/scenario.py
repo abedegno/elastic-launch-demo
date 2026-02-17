@@ -773,6 +773,7 @@ class GamingScenario(BaseScenario):
         return {
             "id": "gaming-liveops-analyst",
             "name": "Live Operations Analyst",
+            "assessment_tool_name": "liveops_health_assessment",
             "system_prompt": (
                 "You are the Live Operations Analyst, an expert AI assistant for "
                 "live multiplayer gaming platform operations. You help live-ops engineers "
@@ -785,12 +786,21 @@ class GamingScenario(BaseScenario):
         }
 
     @property
-    def tool_definitions(self) -> list[dict[str, Any]]:
-        return []  # Populated by setup scripts
+    def assessment_tool_config(self) -> dict[str, Any]:
+        return {
+            "id": "liveops_health_assessment",
+            "description": (
+                "Comprehensive live service health assessment. Evaluates all "
+                "gaming services against operational readiness criteria. Returns data "
+                "for live-ops evaluation across game servers, matchmaking, CDN, "
+                "authentication, and payment systems. "
+                "Log message field: body.text (never use 'body' alone)."
+            ),
+        }
 
     @property
     def knowledge_base_docs(self) -> list[dict[str, Any]]:
-        return []  # Populated by setup scripts
+        return []  # Populated by deployer from channel_registry
 
     # ── Service Classes ───────────────────────────────────────────────
 

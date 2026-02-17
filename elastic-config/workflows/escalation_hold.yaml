@@ -1,5 +1,5 @@
 version: "1"
-name: NOVA-7 Escalation and Hold Management
+name: __SCENARIO_NAME__ Escalation and Hold Management
 description: >
   Manage escalation of critical anomalies and launch hold decisions.
   Implements the hold protocol: escalate -> hold -> investigate -> resolve -> resume.
@@ -43,7 +43,7 @@ steps:
         type: console
         with:
           message: >
-            ESCALATION - NOVA-7 Channel {{ inputs.channel }}.
+            ESCALATION - __SCENARIO_NAME__ Channel {{ inputs.channel }}.
             Severity: {{ inputs.severity }}.
             Requested by operator.
             Justification: {{ inputs.justification }}.
@@ -71,13 +71,13 @@ steps:
       - name: escalate_audit
         type: elasticsearch.index
         with:
-          index: "nova7-escalation-audit"
+          index: "__NS__-escalation-audit"
           document:
             action: "escalate"
             channel: "{{ inputs.channel }}"
             severity: "{{ inputs.severity }}"
             justification: "{{ inputs.justification }}"
-            mission_id: "NOVA-7"
+            mission_id: "__SCENARIO_NAME__"
           refresh: wait_for
 
   - name: route_hold
@@ -95,7 +95,7 @@ steps:
 
       - name: hold_safety_check
         type: ai.agent
-        agent-id: nova7-launch-anomaly-analyst
+        agent-id: __AGENT_ID__
         with:
           message: >
             Countdown hold requested for channel {{ inputs.channel }}
@@ -110,14 +110,14 @@ steps:
       - name: hold_audit
         type: elasticsearch.index
         with:
-          index: "nova7-escalation-audit"
+          index: "__NS__-escalation-audit"
           document:
             action: "request_hold"
             channel: "{{ inputs.channel }}"
             severity: "{{ inputs.severity }}"
             justification: "{{ inputs.justification }}"
             status: "hold_active"
-            mission_id: "NOVA-7"
+            mission_id: "__SCENARIO_NAME__"
           refresh: wait_for
 
   - name: route_resolve
@@ -135,14 +135,14 @@ steps:
       - name: resolve_audit
         type: elasticsearch.index
         with:
-          index: "nova7-escalation-audit"
+          index: "__NS__-escalation-audit"
           document:
             action: "resolve"
             hold_id: "{{ inputs.hold_id }}"
             channel: "{{ inputs.channel }}"
             investigation_summary: "{{ inputs.investigation_summary }}"
             status: "resolved"
-            mission_id: "NOVA-7"
+            mission_id: "__SCENARIO_NAME__"
           refresh: wait_for
 
   - name: route_resume
@@ -186,12 +186,12 @@ steps:
       - name: resume_audit
         type: elasticsearch.index
         with:
-          index: "nova7-escalation-audit"
+          index: "__NS__-escalation-audit"
           document:
             action: "request_resume"
             hold_id: "{{ inputs.hold_id }}"
             justification: "{{ inputs.justification }}"
             active_errors: "{{ steps.resume_safety_check.output.hits.total.value }}"
             status: "resume_requested"
-            mission_id: "NOVA-7"
+            mission_id: "__SCENARIO_NAME__"
           refresh: wait_for

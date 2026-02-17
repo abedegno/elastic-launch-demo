@@ -9,38 +9,43 @@ from __future__ import annotations
 from app.config import CHANNEL_REGISTRY
 
 
-def get_affected_services(channel: int) -> list[str]:
+def get_affected_services(channel: int, registry: dict | None = None) -> list[str]:
     """Return the list of directly affected services for a channel."""
-    ch = CHANNEL_REGISTRY.get(channel)
+    reg = registry or CHANNEL_REGISTRY
+    ch = reg.get(channel)
     return ch["affected_services"] if ch else []
 
 
-def get_cascade_services(channel: int) -> list[str]:
+def get_cascade_services(channel: int, registry: dict | None = None) -> list[str]:
     """Return the list of cascade (secondary) services for a channel."""
-    ch = CHANNEL_REGISTRY.get(channel)
+    reg = registry or CHANNEL_REGISTRY
+    ch = reg.get(channel)
     return ch.get("cascade_services", []) if ch else []
 
 
-def get_channel_by_subsystem(subsystem: str) -> list[int]:
+def get_channel_by_subsystem(subsystem: str, registry: dict | None = None) -> list[int]:
     """Return all channel IDs that target a given subsystem."""
+    reg = registry or CHANNEL_REGISTRY
     return [
         ch_id
-        for ch_id, ch in CHANNEL_REGISTRY.items()
+        for ch_id, ch in reg.items()
         if ch["subsystem"] == subsystem
     ]
 
 
-def get_channel_by_error_type(error_type: str) -> int | None:
+def get_channel_by_error_type(error_type: str, registry: dict | None = None) -> int | None:
     """Find channel ID by its error_type string."""
-    for ch_id, ch in CHANNEL_REGISTRY.items():
+    reg = registry or CHANNEL_REGISTRY
+    for ch_id, ch in reg.items():
         if ch["error_type"] == error_type:
             return ch_id
     return None
 
 
-def get_channel_summary(channel: int) -> dict | None:
+def get_channel_summary(channel: int, registry: dict | None = None) -> dict | None:
     """Get a display-friendly summary of a channel."""
-    ch = CHANNEL_REGISTRY.get(channel)
+    reg = registry or CHANNEL_REGISTRY
+    ch = reg.get(channel)
     if not ch:
         return None
     return {
@@ -56,9 +61,10 @@ def get_channel_summary(channel: int) -> dict | None:
     }
 
 
-def get_all_channel_summaries() -> list[dict]:
+def get_all_channel_summaries(registry: dict | None = None) -> list[dict]:
     """Get summaries for all 20 channels."""
+    reg = registry or CHANNEL_REGISTRY
     return [
-        get_channel_summary(ch_id)
-        for ch_id in sorted(CHANNEL_REGISTRY.keys())
+        get_channel_summary(ch_id, registry=reg)
+        for ch_id in sorted(reg.keys())
     ]

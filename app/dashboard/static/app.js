@@ -7,6 +7,10 @@
     let ws = null;
     let pollInterval = null;
 
+    // ── Deployment isolation ────────────────────────────────
+    const deployId = window.DEPLOYMENT_ID || '';
+    const qs = deployId ? '?deployment_id=' + encodeURIComponent(deployId) : '';
+
     // ── localStorage session isolation (namespace-scoped) ────
     const ns = window.SCENARIO_NAMESPACE || 'demo';
     const LS_KEY = ns + '_my_channels';
@@ -72,7 +76,7 @@
 
     // ── Load scenario data and build UI ─────────────────────
     function initScenario() {
-        fetch('/api/scenario')
+        fetch('/api/scenario' + qs)
             .then(r => r.json())
             .then(data => {
                 // Build service grid
@@ -233,7 +237,7 @@
 
     // ── HTTP Polling Fallback ─────────────────────────────────
     function pollStatus() {
-        fetch('/api/status')
+        fetch('/api/status' + qs)
             .then(r => r.json())
             .then(data => {
                 updateServices(data.services || {}, data.chaos);
@@ -244,16 +248,22 @@
 
     // ── Countdown Controls ────────────────────────────────────
     window.countdownAction = function (action) {
-        fetch(`/api/countdown/${action}`, { method: 'POST' })
+        fetch(`/api/countdown/${action}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(deployId ? { deployment_id: deployId } : {}),
+        })
             .then(() => pollStatus())
             .catch(e => console.error('Countdown action failed:', e));
     };
 
     window.setSpeed = function (speed) {
+        const payload = { speed: parseFloat(speed) };
+        if (deployId) payload.deployment_id = deployId;
         fetch('/api/countdown/speed', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ speed: parseFloat(speed) }),
+            body: JSON.stringify(payload),
         })
             .then(() => pollStatus())
             .catch(e => console.error('Speed set failed:', e));

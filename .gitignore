@@ -67,5 +67,8 @@ elastic-config/dashboards/exec-dashboard.ndjson
 /tmp_*.txt
 *.tmp
 
+# ---------------------- Runtime data -----------------------
+data/
+
 # ---------------------- Claude Code -------------------------
 .claude/

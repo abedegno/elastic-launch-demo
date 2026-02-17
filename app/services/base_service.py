@@ -26,11 +26,45 @@ class BaseService(ABC):
     # Subclasses MUST set this
     SERVICE_NAME: str = ""
 
+    # Class-level context — set by ServiceManager before batch-creating services.
+    # Avoids changing 37 subclass constructors.
+    _context = None  # ScenarioContext | None
+    _context_lock = threading.Lock()
+
+    @classmethod
+    def set_context(cls, ctx):
+        """Set the scenario context for the next batch of service instantiations."""
+        cls._context = ctx
+
+    @classmethod
+    def clear_context(cls):
+        """Clear the class-level context after batch creation."""
+        cls._context = None
+
     def __init__(self, chaos_controller, otlp_client: OTLPClient):
         self.chaos_controller = chaos_controller
         self.otlp = otlp_client
-        self.service_cfg = SERVICES[self.SERVICE_NAME]
-        self.resource = OTLPClient.build_resource(self.SERVICE_NAME, self.service_cfg)
+
+        # Capture context at creation time
+        ctx = self.__class__._context
+        if ctx:
+            self._ctx = ctx
+            self.service_cfg = ctx.services[self.SERVICE_NAME]
+            self._channel_registry = ctx.channel_registry
+            self._mission_id = ctx.mission_id
+            self._namespace = ctx.namespace
+        else:
+            # Backward-compatible: module-level globals
+            self._ctx = None
+            self.service_cfg = SERVICES[self.SERVICE_NAME]
+            self._channel_registry = CHANNEL_REGISTRY
+            self._mission_id = MISSION_ID
+            self._namespace = "nova7"
+
+        self.resource = OTLPClient.build_resource(
+            self.SERVICE_NAME, self.service_cfg,
+            namespace=self._namespace,
+        )
 
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -82,7 +116,7 @@ class BaseService(ABC):
     def get_active_channels_for_service(self) -> list[int]:
         """Return list of active channels that affect this service."""
         active = []
-        for ch_id, ch_def in CHANNEL_REGISTRY.items():
+        for ch_id, ch_def in self._channel_registry.items():
             if self.SERVICE_NAME in ch_def["affected_services"]:
                 if self.is_channel_active(ch_id):
                     active.append(ch_id)
@@ -91,7 +125,7 @@ class BaseService(ABC):
     def get_cascade_channels_for_service(self) -> list[int]:
         """Return list of active channels where this service is in the cascade."""
         active = []
-        for ch_id, ch_def in CHANNEL_REGISTRY.items():
+        for ch_id, ch_def in self._channel_registry.items():
             if self.SERVICE_NAME in ch_def.get("cascade_services", []):
                 if self.is_channel_active(ch_id):
                     active.append(ch_id)
@@ -128,7 +162,7 @@ class BaseService(ABC):
     def _base_log_attrs(self) -> dict[str, Any]:
         """Fields required on every log record."""
         return {
-            "launch.mission_id": MISSION_ID,
+            "launch.mission_id": self._mission_id,
             "launch.phase": self._phase,
             "system.subsystem": self.service_cfg["subsystem"],
             "system.status": self._status,
@@ -193,7 +227,7 @@ class BaseService(ABC):
 
     def emit_fault_logs(self, channel: int) -> None:
         """Emit error logs matching the channel's exact error signature."""
-        ch = CHANNEL_REGISTRY.get(channel)
+        ch = self._channel_registry.get(channel)
         if not ch:
             return
 
@@ -236,7 +270,7 @@ class BaseService(ABC):
 
     def emit_cascade_logs(self, channel: int) -> None:
         """Emit warning logs for cascading effects (not matching the SE query)."""
-        ch = CHANNEL_REGISTRY.get(channel)
+        ch = self._channel_registry.get(channel)
         if not ch:
             return
         messages = [
@@ -256,4 +290,6 @@ class BaseService(ABC):
 
     def _generate_fault_params(self, channel: int) -> dict[str, Any]:
         """Generate realistic random parameters for fault messages from scenario."""
+        if self._ctx:
+            return self._ctx.scenario.get_fault_params(channel)
         return _get_scenario().get_fault_params(channel)

@@ -398,14 +398,16 @@ def _send_metrics_with_scopes(client: OTLPClient, resource: dict, metrics_by_sco
 
 
 # ── Run loop (used by ServiceManager and standalone) ──────────────────────────
-def run(client: OTLPClient, stop_event: threading.Event) -> None:
+def run(client: OTLPClient, stop_event: threading.Event, scenario_data: dict | None = None) -> None:
     """Run host metrics generator loop until stop_event is set."""
     rng = random.Random()
+
+    hosts = scenario_data["hosts"] if scenario_data else HOSTS
 
     # Build resources and metric state for each host
     host_resources = []
     host_states = []
-    for host_cfg in HOSTS:
+    for host_cfg in hosts:
         resource = _build_host_resource(host_cfg)
         state = HostMetricState(
             cpu_count=host_cfg["cpu_count"],
@@ -420,7 +422,7 @@ def run(client: OTLPClient, stop_event: threading.Event) -> None:
     scrape_count = 0
 
     logger.info("Host metrics generator started (interval=%ds, hosts=%d)",
-                METRICS_INTERVAL, len(HOSTS))
+                METRICS_INTERVAL, len(hosts))
 
     while not stop_event.is_set():
         batch_metrics = 0
@@ -433,7 +435,7 @@ def run(client: OTLPClient, stop_event: threading.Event) -> None:
         total_metrics += batch_metrics
         logger.info(
             "Scrape %d: sent %d metrics across %d hosts (total=%d)",
-            scrape_count, batch_metrics, len(HOSTS), total_metrics,
+            scrape_count, batch_metrics, len(hosts), total_metrics,
         )
 
         stop_event.wait(METRICS_INTERVAL)

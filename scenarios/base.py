@@ -170,14 +170,36 @@ class BaseScenario(ABC):
     @property
     @abstractmethod
     def agent_config(self) -> dict[str, Any]:
-        """Agent ID, name, system prompt for Agent Builder."""
+        """Agent ID, name, system prompt, and assessment_tool_name for Agent Builder.
+
+        Required keys:
+          - id: agent ID (e.g. "finserv-trading-analyst")
+          - name: display name (e.g. "Trading Operations Analyst")
+          - system_prompt: identity + domain expertise text
+          - assessment_tool_name: scenario-specific assessment tool name
+            (e.g. "launch_safety_assessment", "trading_risk_assessment")
+        """
         ...
 
     @property
     @abstractmethod
-    def tool_definitions(self) -> list[dict[str, Any]]:
-        """Agent Builder tool configurations."""
+    def assessment_tool_config(self) -> dict[str, Any]:
+        """Scenario-specific assessment tool definition.
+
+        Returns a dict with keys: id, description.
+        Example for space: {"id": "launch_safety_assessment",
+                            "description": "GO/NO-GO launch readiness evaluation..."}
+        """
         ...
+
+    @property
+    def tool_definitions(self) -> list[dict[str, Any]]:
+        """Agent Builder tool configurations — auto-generated from scenario properties.
+
+        Override in a subclass for fully custom tools.  By default generates
+        6 generic tools + the scenario-specific assessment tool.
+        """
+        return self._default_tool_definitions()
 
     @property
     @abstractmethod
@@ -218,3 +240,201 @@ class BaseScenario(ABC):
             sub = svc_cfg["subsystem"]
             groups.setdefault(sub, []).append(svc_name)
         return groups
+
+    @property
+    def dashboard_cloud_groups(self) -> list[dict[str, Any]]:
+        """Cloud groups for exec dashboard layout (AWS/GCP/Azure columns)."""
+        cloud_order = ["aws", "gcp", "azure"]
+        x_starts = [0, 16, 33]
+        col_widths = [15, 16, 15]
+        groups = []
+        for i, provider in enumerate(cloud_order):
+            svcs = self.cloud_groups.get(provider, [])
+            cluster = next(
+                (c for c in self.k8s_clusters if c["provider"] == provider), {}
+            )
+            groups.append({
+                "label": f"**{provider.upper()}** {cluster.get('region', '')}",
+                "services": svcs,
+                "x_start": x_starts[i],
+                "col_width": col_widths[i],
+                "cluster": cluster.get("name", ""),
+            })
+        return groups
+
+    @property
+    def infra_names(self) -> dict[str, Any]:
+        """Standard infrastructure names derived from namespace."""
+        ns = self.namespace
+        return {
+            "nginx_hosts": [f"{ns}-nginx-01", f"{ns}-nginx-02"],
+            "nginx_servers": [f"{ns}-proxy-01", f"{ns}-proxy-02"],
+            "proxy_host": f"{ns}-proxy-host",
+            "mysql_host": f"{ns}-mysql-host",
+            "vpc_scope": f"{ns}-vpc-flow-generator",
+            "vpc_names": [f"{ns}-vpc-prod", f"{ns}-vpc-staging", f"{ns}-vpc-data"],
+            "gcp_account": f"{ns}-project-prod",
+            "daemonsets": [f"{ns}-log-collector", f"{ns}-node-exporter"],
+            "statefulsets": [f"{ns}-redis", f"{ns}-postgres"],
+            "url_domain": f"{ns}.internal",
+            "db_prefix": ns.replace("-", "_"),
+        }
+
+    # ── Default Tool Generation ──────────────────────────────────────
+
+    def _default_tool_definitions(self) -> list[dict[str, Any]]:
+        """Generate the standard 7 agent tools from scenario properties."""
+        svc_names = ", ".join(sorted(self.services.keys()))
+        kb_index = f"{self.namespace}-knowledge-base"
+
+        registry_values = list(self.channel_registry.values())
+        example_error = registry_values[0]["error_type"] if registry_values else "SomeException"
+
+        tools = [
+            {
+                "id": "search_error_logs",
+                "type": "esql",
+                "description": (
+                    f"Search telemetry logs for a specific error or exception type. "
+                    f"Returns the 50 most recent ERROR-level log entries matching the "
+                    f"error type. Services: {svc_names}. "
+                    f"The error_type parameter is matched against body.text."
+                ),
+                "configuration": {
+                    "query": (
+                        'FROM logs,logs.* '
+                        '| WHERE @timestamp > NOW() - 15 MINUTES '
+                        'AND body.text LIKE ?error_type AND severity_text == "ERROR" '
+                        '| KEEP @timestamp, body.text, service.name, severity_text, event_name '
+                        '| SORT @timestamp DESC | LIMIT 50'
+                    ),
+                    "params": {
+                        "error_type": {
+                            "description": f"Wildcard pattern for the error type, e.g. *{example_error}*",
+                            "type": "string",
+                            "optional": False,
+                        }
+                    },
+                },
+            },
+            {
+                "id": "search_subsystem_health",
+                "type": "esql",
+                "description": (
+                    f"Query health status by aggregating recent telemetry. "
+                    f"Returns error/warning counts per service. "
+                    f"Services: {svc_names}. "
+                    f"Log message field: body.text (never use 'body' alone)."
+                ),
+                "configuration": {
+                    "query": (
+                        'FROM logs,logs.* '
+                        '| WHERE @timestamp > NOW() - 15 MINUTES '
+                        '| STATS error_count = COUNT(*) WHERE severity_text == "ERROR", '
+                        'warn_count = COUNT(*) WHERE severity_text == "WARN", '
+                        'total = COUNT(*) BY service.name '
+                        '| SORT error_count DESC'
+                    ),
+                    "params": {},
+                },
+            },
+            {
+                "id": "search_service_logs",
+                "type": "esql",
+                "description": (
+                    f"Search telemetry logs for a specific service. "
+                    f"Returns the 50 most recent ERROR and WARN entries. "
+                    f"Available services: {svc_names}."
+                ),
+                "configuration": {
+                    "query": (
+                        'FROM logs,logs.* '
+                        '| WHERE @timestamp > NOW() - 15 MINUTES '
+                        'AND service.name == ?service_name '
+                        'AND severity_text IN ("ERROR", "WARN") '
+                        '| KEEP @timestamp, body.text, service.name, severity_text '
+                        '| SORT @timestamp DESC | LIMIT 50'
+                    ),
+                    "params": {
+                        "service_name": {
+                            "description": f"The service to investigate ({svc_names})",
+                            "type": "string",
+                            "optional": False,
+                        }
+                    },
+                },
+            },
+            {
+                "id": "search_known_anomalies",
+                "type": "index_search",
+                "description": (
+                    f"Search the knowledge base for documented anomalies, failure "
+                    f"patterns, and resolution procedures. Contains RCA guides for "
+                    f"all 20 fault channels."
+                ),
+                "configuration": {
+                    "pattern": kb_index,
+                },
+            },
+            {
+                "id": "trace_anomaly_propagation",
+                "type": "esql",
+                "description": (
+                    "Trace the propagation path of anomalies across services. "
+                    "Shows which services have errors and warnings over time to "
+                    "identify cascade chains. "
+                    "Log message field: body.text (never use 'body' alone)."
+                ),
+                "configuration": {
+                    "query": (
+                        'FROM logs,logs.* '
+                        '| WHERE @timestamp > NOW() - 15 MINUTES '
+                        'AND severity_text IN ("ERROR", "WARN") '
+                        '| STATS error_count = COUNT(*) WHERE severity_text == "ERROR", '
+                        'warn_count = COUNT(*) WHERE severity_text == "WARN" '
+                        'BY service.name | SORT error_count DESC'
+                    ),
+                    "params": {},
+                },
+            },
+            {
+                "id": "browse_recent_errors",
+                "type": "esql",
+                "description": (
+                    "Browse all recent ERROR and WARN log entries across all services. "
+                    "Use for general situation awareness when you do not yet know the "
+                    "specific error type or service."
+                ),
+                "configuration": {
+                    "query": (
+                        'FROM logs,logs.* '
+                        '| WHERE @timestamp > NOW() - 15 MINUTES '
+                        'AND severity_text IN ("ERROR", "WARN") '
+                        '| KEEP @timestamp, body.text, service.name, severity_text '
+                        '| SORT @timestamp DESC | LIMIT 50'
+                    ),
+                    "params": {},
+                },
+            },
+        ]
+
+        # Add scenario-specific assessment tool
+        assessment = self.assessment_tool_config
+        tools.append({
+            "id": assessment["id"],
+            "type": "esql",
+            "description": assessment["description"],
+            "configuration": {
+                "query": (
+                    'FROM logs,logs.* '
+                    '| WHERE @timestamp > NOW() - 15 MINUTES '
+                    'AND severity_text IN ("ERROR", "WARN") '
+                    '| STATS error_count = COUNT(*) WHERE severity_text == "ERROR", '
+                    'warn_count = COUNT(*) WHERE severity_text == "WARN" '
+                    'BY service.name | SORT error_count DESC'
+                ),
+                "params": {},
+            },
+        })
+
+        return tools

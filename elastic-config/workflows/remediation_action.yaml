@@ -1,7 +1,7 @@
 version: "1"
-name: NOVA-7 Remediation Action
+name: __SCENARIO_NAME__ Remediation Action
 description: >
-  Execute remediation actions for NOVA-7 anomalies. Captures pre-action
+  Execute remediation actions for __SCENARIO_NAME__ anomalies. Captures pre-action
   state, extracts callback_url from log event_name, executes the
   remediation via HTTP callback, waits for stabilization, verifies
   error counts dropped, and logs the result to an audit index.
@@ -119,7 +119,7 @@ steps:
   - name: audit_log
     type: elasticsearch.index
     with:
-      index: "nova7-remediation-audit"
+      index: "__NS__-remediation-audit"
       document:
         channel: "{{ inputs.channel }}"
         action_type: "{{ inputs.action_type }}"
@@ -128,5 +128,5 @@ steps:
         dry_run: "{{ inputs.dry_run }}"
         pre_error_count: "{{ steps.pre_action_snapshot.output.values[0] }}"
         post_error_count: "{{ steps.post_action_snapshot.output.values[0][0] }}"
-        mission_id: "NOVA-7"
+        mission_id: "__SCENARIO_NAME__"
       refresh: wait_for

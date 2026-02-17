@@ -1,5 +1,5 @@
 version: "1"
-name: NOVA-7 Significant Event Notification
+name: __SCENARIO_NAME__ Significant Event Notification
 description: >
   Notify launch operations team when a significant event is detected.
   Triggered by alert rules — uses event.rule.tags[1] for the error_type
@@ -39,9 +39,9 @@ steps:
     with:
       to:
         - "{{ steps.parse_event_meta.output.var[0].event_meta.user_email }}"
-      subject: "NOVA-7 Alert: {{ event.rule.name }}"
+      subject: "__SCENARIO_NAME__ Alert: {{ event.rule.name }}"
       message: >
-        Significant event detected in NOVA-7 mission:
+        Significant event detected in __SCENARIO_NAME__ mission:
 
         Rule: {{ event.rule.name }}
         Error Type: {{ event.rule.tags[1] }}
@@ -53,7 +53,7 @@ steps:
 
   - name: run_rca
     type: ai.agent
-    agent-id: nova7-launch-anomaly-analyst
+    agent-id: __AGENT_ID__
     create-conversation: true
     with:
       message: >
@@ -67,13 +67,13 @@ steps:
   - name: create_case
     type: kibana.createCaseDefaultSpace
     with:
-      title: "NOVA-7 RCA: {{ event.rule.name }}"
+      title: "__SCENARIO_NAME__ RCA: {{ event.rule.name }}"
       description: |
        [View Full Conversation]({{ kibanaUrl }}/app/agent_builder/conversations/{{ steps.run_rca.output.conversation_id }})
 
        {{ steps.run_rca.output.message }}
       tags:
-        - "nova7"
+        - "__NS__"
         - "{{ event.rule.tags[1] }}"
       severity: "high"
       owner: "observability"
@@ -88,11 +88,11 @@ steps:
   - name: audit_log
     type: elasticsearch.index
     with:
-      index: "nova7-significant-events-audit"
+      index: "__NS__-significant-events-audit"
       document:
         rule_name: "{{ event.rule.name }}"
         error_type: "{{ event.rule.tags[1] }}"
         total_errors: "{{ steps.count_errors.output.values[0][0] }}"
         rca_case_created: true
-        mission_id: "NOVA-7"
+        mission_id: "__SCENARIO_NAME__"
       refresh: wait_for
