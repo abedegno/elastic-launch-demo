@@ -29,10 +29,17 @@ class ServiceManager:
             self._countdown_total = _countdown.start_seconds if _countdown.enabled else 600
             self._countdown_speed = _countdown.speed if _countdown.enabled else 1.0
             self._countdown_enabled = _countdown.enabled
+            self._countdown_phases = _countdown.phases
         else:
             self._countdown_total = COUNTDOWN_START_SECONDS
             self._countdown_speed = COUNTDOWN_SPEED
             self._countdown_enabled = COUNTDOWN_ENABLED
+            self._countdown_phases = {
+                "PRE-LAUNCH": (300, 9999),
+                "COUNTDOWN": (60, 300),
+                "FINAL-COUNTDOWN": (0, 60),
+                "LAUNCH": (0, 0),
+            }
 
         self._countdown_remaining = float(self._countdown_total)
         self._countdown_running = False
@@ -176,16 +183,13 @@ class ServiceManager:
                     if self._countdown_remaining < 0:
                         self._countdown_remaining = 0
 
-                    # Phase transitions based on countdown
+                    # Phase transitions based on countdown_config.phases
                     remaining = self._countdown_remaining
-                    if remaining > 300:
-                        phase = "PRE-LAUNCH"
-                    elif remaining > 60:
-                        phase = "COUNTDOWN"
-                    elif remaining > 0:
-                        phase = "FINAL-COUNTDOWN"
-                    else:
-                        phase = "LAUNCH"
+                    phase = "ACTIVE"
+                    for p_name, (p_min, p_max) in self._countdown_phases.items():
+                        if p_min <= remaining <= p_max:
+                            phase = p_name
+                            break
 
                     for svc in self.services.values():
                         svc.set_phase(phase)

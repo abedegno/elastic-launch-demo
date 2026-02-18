@@ -836,6 +836,10 @@ class SpaceScenario(BaseScenario):
         )
 
     @property
+    def nominal_label(self) -> str:
+        return "NOMINAL"
+
+    @property
     def countdown_config(self) -> CountdownConfig:
         return CountdownConfig(
             enabled=True,

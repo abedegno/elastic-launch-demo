@@ -23,7 +23,7 @@ from app.config import (
 logger = logging.getLogger("nova7.telemetry")
 
 SCHEMA_URL = "https://opentelemetry.io/schemas/1.35.0"
-SCOPE_NAME = "nova7-launch-demo"
+SCOPE_NAME = "elastic-launch-demo"
 
 
 def _format_attributes(attrs: dict[str, Any]) -> list[dict[str, Any]]:
@@ -92,7 +92,7 @@ class OTLPClient:
 
     # ── Resource helpers ───────────────────────────────────────────────
     @staticmethod
-    def build_resource(service_name: str, service_cfg: dict[str, Any], namespace: str = "nova7") -> dict[str, Any]:
+    def build_resource(service_name: str, service_cfg: dict[str, Any], namespace: str = "demo") -> dict[str, Any]:
         """Build an OTLP resource object for a service."""
         attrs = {
             "service.name": service_name,

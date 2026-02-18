@@ -13,7 +13,7 @@ inputs:
   - name: error_type
     type: string
     required: true
-    description: "Error type to remediate (e.g. FuelPressureException)"
+    description: "Error type to remediate (e.g. the error type reported in the alert)"
   - name: channel
     type: number
     required: true
@@ -21,7 +21,7 @@ inputs:
   - name: action_type
     type: string
     required: true
-    description: "Remediation action: recalibrate_sensor, restart_service, failover_service, isolate_subsystem"
+    description: "Remediation action: restart_service, reset_pipeline, failover_service, isolate_subsystem"
   - name: target_service
     type: string
     default: ""
@@ -75,6 +75,7 @@ steps:
       body:
         action: "{{ inputs.action_type }}"
         channel: "{{ inputs.channel }}"
+        deployment_id: "{{ steps.extract_callback.output.var[0].event_meta.deployment_id }}"
         target_service: "{{ inputs.target_service }}"
         dry_run: "{{ inputs.dry_run }}"
         justification: "{{ inputs.justification }}"

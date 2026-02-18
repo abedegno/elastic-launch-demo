@@ -66,10 +66,16 @@ class BaseService(ABC):
             namespace=self._namespace,
         )
 
+        # Derive nominal label from scenario (space="NOMINAL", others="NORMAL")
+        if self._ctx:
+            self._nominal_label = self._ctx.scenario.nominal_label
+        else:
+            self._nominal_label = _get_scenario().nominal_label
+
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
-        self._phase = "PRE-LAUNCH"
-        self._status = "NOMINAL"
+        self._phase = "ACTIVE"
+        self._status = self._nominal_label
         self._last_status_change = time.time()
 
     # ── Lifecycle ──────────────────────────────────────────────────────
@@ -141,7 +147,7 @@ class BaseService(ABC):
         elif cascade:
             status = "WARNING"
         else:
-            status = "NOMINAL"
+            status = self._nominal_label
         self._status = status
         return {
             "service": self.SERVICE_NAME,
@@ -162,8 +168,8 @@ class BaseService(ABC):
     def _base_log_attrs(self) -> dict[str, Any]:
         """Fields required on every log record."""
         return {
-            "launch.mission_id": self._mission_id,
-            "launch.phase": self._phase,
+            "ops.mission_id": self._mission_id,
+            "ops.phase": self._phase,
             "system.subsystem": self.service_cfg["subsystem"],
             "system.status": self._status,
         }
@@ -265,6 +271,7 @@ class BaseService(ABC):
                 ev_name = _json.dumps({
                     "callback_url": meta.get("callback_url", ""),
                     "user_email": meta.get("user_email", ""),
+                    "deployment_id": self._ctx.scenario_id if self._ctx else "",
                 })
             self.emit_log("ERROR", msg, attrs, event_name=ev_name)
 

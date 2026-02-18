@@ -165,6 +165,11 @@ class BaseScenario(ABC):
         """Optional countdown timer. Override if scenario has one."""
         return CountdownConfig(enabled=False)
 
+    @property
+    def nominal_label(self) -> str:
+        """Status label for 'all clear'. Override for domain jargon (e.g. space uses 'NOMINAL')."""
+        return "NORMAL"
+
     # ── Agent & Elastic Config ───────────────────────────────────────
 
     @property

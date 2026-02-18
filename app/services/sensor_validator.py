@@ -102,6 +102,7 @@ class SensorValidatorService(BaseService):
             ev_name = _json.dumps({
                 "callback_url": meta.get("callback_url", ""),
                 "user_email": meta.get("user_email", ""),
+                "deployment_id": self._ctx.scenario_id if self._ctx else "",
             })
         self.emit_log(
             "ERROR",
