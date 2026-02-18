@@ -1093,6 +1093,15 @@ Do NOT write custom ES|QL queries. Use the parameterized tools.
                 },
                 "override": True,
             },
+            {
+                "data_view": {
+                    "id": "metrics-*",
+                    "title": "metrics-*",
+                    "name": f"{self.scenario.scenario_name} Metrics",
+                    "timeFieldName": "@timestamp",
+                },
+                "override": True,
+            },
         ]
 
         created = 0
