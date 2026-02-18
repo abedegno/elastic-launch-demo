@@ -89,9 +89,9 @@ class ScenarioDeployer:
         api_key: str,
     ):
         self.scenario = scenario
-        self.elastic_url = elastic_url.rstrip("/")
-        self.kibana_url = kibana_url.rstrip("/")
-        self.api_key = api_key
+        self.elastic_url = elastic_url.strip().rstrip("/")
+        self.kibana_url = kibana_url.strip().rstrip("/")
+        self.api_key = api_key.strip()
         self.ns = scenario.namespace
         self.progress = DeployProgress()
         self._workflow_ids: dict[str, str] = {}  # name fragment -> workflow ID

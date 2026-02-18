@@ -541,14 +541,14 @@ async def test_connection(body: dict):
     from scenarios import get_scenario as _get_scenario_by_id
     from elastic_config.deployer import ScenarioDeployer
 
-    kibana_url = body.get("kibana_url", "")
-    api_key = body.get("api_key", "")
+    kibana_url = body.get("kibana_url", "").strip().rstrip("/")
+    api_key = body.get("api_key", "").strip()
 
     if not kibana_url or not api_key:
         return {"ok": False, "error": "Missing kibana_url or api_key"}
 
     # Derive ES URL from Kibana URL unless explicitly provided
-    elastic_url = body.get("elastic_url") or ""
+    elastic_url = (body.get("elastic_url") or "").strip().rstrip("/")
     if not elastic_url and ".kb." in kibana_url:
         elastic_url = kibana_url.replace(".kb.", ".es.")
 
@@ -596,11 +596,11 @@ async def launch_setup(body: dict):
     from app.instance import ScenarioInstance
 
     scenario_id = body.get("scenario_id", ACTIVE_SCENARIO)
-    kibana_url = body.get("kibana_url", os.getenv("KIBANA_URL", ""))
-    api_key = body.get("api_key", os.getenv("ELASTIC_API_KEY", ""))
+    kibana_url = body.get("kibana_url", os.getenv("KIBANA_URL", "")).strip().rstrip("/")
+    api_key = body.get("api_key", os.getenv("ELASTIC_API_KEY", "")).strip()
 
     # Derive ES URL from Kibana URL unless explicitly provided
-    elastic_url = body.get("elastic_url") or ""
+    elastic_url = (body.get("elastic_url") or "").strip().rstrip("/")
     if not elastic_url and ".kb." in kibana_url:
         elastic_url = kibana_url.replace(".kb.", ".es.")
     if not elastic_url:
