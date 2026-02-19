@@ -1,180 +1,189 @@
-# NOVA-7 Troubleshooting Guide
+# Troubleshooting Guide
 
-Common issues and their solutions when running the NOVA-7 Launch Demo.
+Common issues and solutions for the Elastic Observability Demo Platform.
 
 ---
 
 ## Table of Contents
 
-1. [Startup Issues](#1-startup-issues)
-2. [Telemetry Pipeline Issues](#2-telemetry-pipeline-issues)
-3. [Dashboard Issues](#3-dashboard-issues)
-4. [Chaos Controller Issues](#4-chaos-controller-issues)
-5. [Notification Issues](#5-notification-issues)
-6. [Elastic / Kibana Issues](#6-elastic--kibana-issues)
-7. [Docker Issues](#7-docker-issues)
-8. [Performance Issues](#8-performance-issues)
+1. [Application Startup](#1-application-startup)
+2. [Scenario Deployment](#2-scenario-deployment)
+3. [Telemetry Pipeline](#3-telemetry-pipeline)
+4. [Dashboard Issues](#4-dashboard-issues)
+5. [Chaos Controller](#5-chaos-controller)
+6. [Elastic / Kibana](#6-elastic--kibana)
+7. [AI Agent & Workflows](#7-ai-agent--workflows)
+8. [Process Management](#8-process-management)
 
 ---
 
-## 1. Startup Issues
+## 1. Application Startup
 
-### Container fails to start
+### App does not start
 
-**Symptoms:** `docker compose up` exits with an error, or the container restarts repeatedly.
+**Symptoms:** `uvicorn` exits with an error or the process does not respond.
 
-**Check logs:**
+**Check:**
 ```bash
-docker compose logs nova7
-docker compose logs otel-collector
+# Is the process running?
+ps aux | grep uvicorn
+
+# Try starting manually to see errors
+sudo python3 -m uvicorn app.main:app --host 0.0.0.0 --port 80
 ```
 
 **Common causes:**
 
 | Cause | Solution |
 |-------|----------|
-| Port 8080 already in use | Change `APP_PORT` in `.env` or stop the conflicting process: `lsof -i :8080` |
-| Invalid Python syntax | Check `docker compose logs nova7` for import errors |
-| Missing .env file | Run `cp .env.example .env` and configure required variables |
-| Docker daemon not running | Start Docker: `sudo systemctl start docker` |
-
-### setup.sh fails validation
-
-**Symptoms:** The setup script reports missing variables or failed checks.
-
-**Solution:**
-```bash
-# Check what is set
-./setup.sh --dry-run
-
-# Ensure .env is loaded
-source .env
-echo $ELASTIC_ENDPOINT
-```
+| Port 80 already in use | Kill the existing process: `sudo kill $(sudo lsof -t -i:80)` |
+| Missing Python dependency | Run `pip install -r requirements.txt` |
+| Missing credentials | Deploy a scenario via the web UI to configure Elastic credentials |
+| Import error | Check for syntax errors in app/ or scenarios/ |
 
 ### Health check fails
 
-**Symptoms:** `curl http://localhost:8080/health` returns connection refused or times out.
+**Symptoms:** `curl http://localhost/health` returns connection refused.
 
-**Diagnosis:**
 ```bash
-# Is the container running?
-docker compose ps
+# Is the process running?
+ps aux | grep uvicorn
 
-# Check container logs
-docker compose logs --tail 50 nova7
-
-# Is the port mapped?
-docker port $(docker compose ps -q nova7) 8080
+# Is it listening on port 80?
+sudo ss -tlnp | grep :80
 ```
 
 ---
 
-## 2. Telemetry Pipeline Issues
+## 2. Scenario Deployment
+
+### Deployment fails at connectivity test
+
+**Symptoms:** The deployer fails at step 1 "Test connectivity."
+
+**Causes:**
+- Wrong Elasticsearch URL — verify it includes the port (`:443` for cloud)
+- Invalid API key — regenerate in Kibana > Stack Management > API Keys
+- Network issue — ensure the server can reach Elastic Cloud (check firewall, proxy)
+
+**Test manually:**
+```bash
+# Use the credentials shown in the scenario selector's auto-detect
+curl -s -H "Authorization: ApiKey <your-api-key>" "<your-elastic-url>" | python3 -m json.tool
+```
+
+### Deployment fails at a specific step
+
+**Symptoms:** The progress panel shows a specific step failed (e.g., "Deploy workflows" or "Create alert rules").
+
+**Diagnosis:**
+- Check the error detail shown in the progress panel
+- Check the uvicorn process logs for stack traces
+- Common issues:
+  - **Workflows fail:** Missing `x-elastic-internal-origin: kibana` header (should be automatic)
+  - **Alert rules fail:** API key lacks rule creation permissions
+  - **Agent fails:** Agent Builder API not available (requires specific Elastic Cloud tier)
+  - **Dashboard fails:** Missing `kbn-xsrf` header or invalid dashboard JSON
+
+### Deployment hangs
+
+**Symptoms:** Progress stops updating and never completes.
+
+**Solutions:**
+- Refresh the page and check `/api/setup/progress?deployment_id=<id>`
+- Check the uvicorn logs for errors or timeouts
+- The AI agent step can take 2-3 minutes — be patient
+- If stuck, restart the app process and re-deploy
+
+---
+
+## 3. Telemetry Pipeline
 
 ### No data appears in Elastic
 
-**Symptoms:** The NOVA-7 app is running but no logs/metrics/traces appear in Kibana.
+**Symptoms:** The app is running but Kibana shows no logs, metrics, or traces.
 
-**Diagnosis steps:**
+**Diagnosis:**
 
-1. **Check the OTel Collector logs:**
+1. **Check the app logs** for OTLP send errors:
    ```bash
-   docker compose logs otel-collector
-   ```
-   Look for connection errors, authentication failures, or export errors.
-
-2. **Verify ELASTIC_ENDPOINT is correct:**
-   ```bash
-   # Test from your machine
-   curl -H "Authorization: ApiKey $ELASTIC_API_KEY" "$ELASTIC_ENDPOINT"
+   # Look for OTLP errors in recent output
+   # If running in background, check nohup.out or redirect logs
    ```
 
-3. **Check the NOVA-7 app logs for OTLP errors:**
-   ```bash
-   docker compose logs nova7 | grep -i "otlp\|send failed"
-   ```
+2. **Verify OTLP endpoint** — the OTLP endpoint should be the APM/OTLP endpoint from your Elastic Cloud console (not the Elasticsearch endpoint)
+
+3. **Check credentials** — verify the API key is valid and has write permissions to `logs-*`, `metrics-*`, and `traces-*` indices
 
 **Common causes:**
 
 | Cause | Solution |
 |-------|----------|
-| Wrong ELASTIC_ENDPOINT | Must include port (e.g., `:443`). Check Elastic Cloud console. |
-| Invalid ELASTIC_API_KEY | Regenerate the key in Kibana > Stack Management > API Keys |
-| API key lacks permissions | Key needs write access to `logs-*`, `metrics-*`, `traces-*` |
-| OTel Collector cannot reach Elastic | Check firewall rules, VPN, proxy settings |
-| Network timeout | Increase collector timeout in `otel-collector-config.yaml` |
+| Wrong OTLP endpoint | Use the OTLP endpoint from Cloud console, not the ES endpoint |
+| Invalid API key | Verify the key is base64-encoded and has write permissions |
+| Network blocked | Verify outbound HTTPS to Elastic Cloud is allowed |
 
-### OTLP send failures in app logs
+### Data arrives but fields are missing
 
-**Symptoms:** Repeated "OTLP logs send failed" or "OTLP metrics send failed" messages.
+**Symptoms:** Logs appear in Kibana but attributes are missing or cannot be searched.
 
-**Solution:** The NOVA-7 app sends to the OTel Collector, not directly to Elastic. Verify:
-```bash
-# Is the collector running?
-docker compose ps otel-collector
+**Important:** OTLP data in Elastic uses passthrough mapping for most `attributes.*` fields. These fields are stored in `_source` but are NOT indexed — they cannot be searched, filtered, or aggregated.
 
-# Can nova7 reach it?
-docker compose exec nova7 curl -s http://otel-collector:4318/v1/logs
+**Indexed fields** (searchable):
+- `body.text`, `severity_text`, `service.name`, `host.name`, `@timestamp`
+
+**Not indexed** (stored only):
+- `attributes.*`, most `resource.attributes.*` (except `service.name`)
+
+**Workaround:** Use `body.text` for text search:
 ```
-
-### Data arrives but with wrong format
-
-**Symptoms:** Data is in Elastic but fields are missing or incorrectly mapped.
-
-**Solution:** Ensure the OTel Collector config uses ECS mapping:
-```yaml
-exporters:
-  elasticsearch:
-    mapping:
-      mode: ecs
+KQL: body.text: "FuelPressureException" AND severity_text: "ERROR"
 ```
 
 ---
 
-## 3. Dashboard Issues
+## 4. Dashboard Issues
 
 ### Dashboard page is blank
 
 **Symptoms:** Navigating to `/dashboard` shows a white page.
 
 **Solutions:**
-- Hard refresh the browser (Ctrl+Shift+R / Cmd+Shift+R)
-- Check browser console for JavaScript errors (F12 > Console)
-- Verify static files are being served: `curl http://localhost:8080/dashboard/static/app.js`
+- Hard refresh (Ctrl+Shift+R)
+- Check browser console (F12) for JavaScript errors
+- Verify the app is running: `curl http://localhost/health`
+- Check that `deployment_id` query parameter is present and valid
 
-### WebSocket connection fails
+### Dashboard does not update in real time
 
-**Symptoms:** Dashboard loads but does not update in real time. Browser console shows WebSocket errors.
+**Symptoms:** Dashboard loads but service statuses are stale.
 
 **Solutions:**
-- Check that WebSocket connections are not blocked by a proxy or firewall
-- Verify the WebSocket endpoint: `ws://localhost:8080/ws/dashboard`
-- If behind a reverse proxy, ensure it supports WebSocket upgrades
+- Check the WebSocket connection in browser console — look for errors on `ws://<host>/ws/dashboard`
+- If behind a reverse proxy, ensure it supports WebSocket upgrade
+- Refresh the page to re-establish the WebSocket connection
 
-### Dashboard shows stale data
+### Dashboard shows wrong theme
 
-**Symptoms:** Services remain in a previous state after triggering or resolving faults.
+**Symptoms:** Colors or terminology do not match the selected scenario.
 
-**Solution:** The dashboard updates via WebSocket push events. If the connection dropped:
-1. Refresh the page
-2. Check `docker compose logs nova7` for WebSocket errors
+**Solution:** The theme is injected based on the `deployment_id` parameter. Verify you are using the correct deployment URL from the scenario selector.
 
 ---
 
-## 4. Chaos Controller Issues
+## 5. Chaos Controller
 
 ### Channel trigger has no effect
 
-**Symptoms:** Triggering a channel via API or UI does not change the dashboard or generate error logs.
+**Symptoms:** Triggering a channel does not change the dashboard or generate errors.
 
 **Diagnosis:**
 ```bash
 # Check channel status
-curl -s http://localhost:8080/api/chaos/status/2 | python3 -m json.tool
+curl -s http://localhost/api/chaos/status/2 | python3 -m json.tool
 
 # Trigger and check response
-curl -s -X POST http://localhost:8080/api/chaos/trigger \
+curl -s -X POST http://localhost/api/chaos/trigger \
   -H 'Content-Type: application/json' \
   -d '{"channel": 2}' | python3 -m json.tool
 ```
@@ -183,227 +192,140 @@ curl -s -X POST http://localhost:8080/api/chaos/trigger \
 
 | Cause | Solution |
 |-------|----------|
-| Channel already active | Check status first; resolve before re-triggering |
+| Channel already active | Resolve it first, then re-trigger |
 | Invalid channel number | Must be 1-20 |
-| Service not running | Check `docker compose ps` and app logs |
+| No active deployment | Deploy a scenario first via the selector |
 
-### Channel will not resolve
+### Channel does not resolve
 
-**Symptoms:** Calling the resolve API returns success but the channel stays active.
+**Symptoms:** Calling resolve returns success but the channel stays active.
 
-**Solution:**
 ```bash
-# Use the resolve endpoint directly
-curl -X POST http://localhost:8080/api/chaos/resolve \
-  -H 'Content-Type: application/json' \
-  -d '{"channel": 2}'
+# Try the remediate endpoint
+curl -X POST http://localhost/api/remediate/2
 
-# Or use the remediate endpoint
-curl -X POST http://localhost:8080/api/remediate/2
+# Check status after
+curl -s http://localhost/api/chaos/status/2
 ```
 
-If it still persists, restart the container:
-```bash
-docker compose restart nova7
-```
+If the channel is stuck, restarting the app process will clear all channel states.
 
 ---
 
-## 5. Notification Issues
+## 6. Elastic / Kibana
 
-### SMS not sending
-
-**Symptoms:** `send_sms()` returns `{"sent": false}` or logs an error.
-
-**Diagnosis checklist:**
-
-- [ ] `TWILIO_ACCOUNT_SID` is set and starts with `AC`
-- [ ] `TWILIO_AUTH_TOKEN` is set
-- [ ] `TWILIO_FROM_NUMBER` is a valid Twilio number in E.164 format (+1XXXXXXXXXX)
-- [ ] `TWILIO_TO_NUMBER` is a verified number (required for trial accounts)
-- [ ] Twilio account has sufficient balance
-
-**Test from the command line:**
-```bash
-curl -X POST "https://api.twilio.com/2010-04-01/Accounts/$TWILIO_ACCOUNT_SID/Messages.json" \
-  --data-urlencode "Body=NOVA-7 test message" \
-  --data-urlencode "From=$TWILIO_FROM_NUMBER" \
-  --data-urlencode "To=$TWILIO_TO_NUMBER" \
-  -u "$TWILIO_ACCOUNT_SID:$TWILIO_AUTH_TOKEN"
-```
-
-### Voice call not connecting
-
-**Symptoms:** Call API returns success but the phone never rings.
-
-**Common causes:**
-
-| Cause | Solution |
-|-------|----------|
-| TwiML URL not publicly accessible | Use ngrok, a public server, or Twilio TwiML Bins |
-| Twilio cannot fetch the TwiML | Check the URL returns valid XML with `curl` |
-| Destination number not verified | On trial accounts, add the number to verified callers |
-
-### Slack webhook not posting
-
-**Symptoms:** `send_slack_alert()` returns an error.
-
-**Diagnosis:**
-
-```bash
-# Test the webhook directly
-curl -X POST "$SLACK_WEBHOOK_URL" \
-  -H 'Content-Type: application/json' \
-  -d '{"text": "NOVA-7 test alert"}'
-```
-
-**Common causes:**
-
-| Cause | Solution |
-|-------|----------|
-| Webhook URL is invalid or expired | Create a new webhook in the Slack app settings |
-| Channel was deleted or archived | Re-add the webhook to an active channel |
-| Slack app was uninstalled | Reinstall the app in your workspace |
-| Network/firewall blocks outbound | Ensure the container can reach `hooks.slack.com` |
-
----
-
-## 6. Elastic / Kibana Issues
-
-### Cannot find NOVA-7 data in Discover
-
-**Symptoms:** Kibana Discover shows no results for NOVA-7 logs.
+### Cannot find data in Discover
 
 **Solutions:**
 
-1. Create or select the correct data view:
-   - Go to **Stack Management** > **Data Views**
-   - Create a new data view: `logs-*`
-   - Set the time field to `@timestamp`
+1. Make sure you have the right data view selected:
+   - `logs-*` for logs (managed by OTLP integration)
+   - `metrics-*` for metrics
+   - `traces-*` for traces
+   - `logs*` (custom, created by deployer) for executive dashboard
 
-2. Check the time range in Discover — make sure it includes "now"
+2. Check the time range includes "now"
 
 3. Verify data exists:
    ```
    GET logs/_count
    ```
 
-### Significant event rules not firing
-
-**Symptoms:** Faults are triggered and errors appear in Kibana, but no alerts fire.
+### Significant events / alert rules not firing
 
 **Check:**
-- Rule is enabled in **Security** > **Rules**
-- Rule schedule interval is short enough (1 minute recommended)
-- The ES|QL query matches the actual field names in your data
-- Time window in the query covers the fault duration
+- Rules are enabled in Kibana > Rules
+- Rule schedule is 1 minute (minimum)
+- The ES|QL query matches actual field names
+- Sufficient error volume has been generated (trigger a fault and wait 1-2 minutes)
 
 ### ES|QL query returns no results
 
-**Symptoms:** Running the detection query manually returns empty.
-
-**Debug approach:**
+**Debug approach — start broad, then narrow:**
 ```esql
--- Start broad, then narrow
-FROM logs-*
-| WHERE service.namespace == "nova7"
+FROM logs,logs.*
+| WHERE severity_text == "ERROR"
 | LIMIT 10
 
--- Add the error filter
-FROM logs-*
-| WHERE service.namespace == "nova7" AND severity_text == "ERROR"
-| LIMIT 10
-
--- Add the specific error type
-FROM logs-*
-| WHERE service.namespace == "nova7" AND error.type == "FuelPressureException"
+FROM logs,logs.*
+| WHERE KQL("body.text: \"FuelPressureException\" AND severity_text: \"ERROR\"")
 | LIMIT 10
 ```
+
+> **Important:** Use `FROM logs,logs.*` (not just `FROM logs-*`) to include OTLP sub-streams. Use `KQL()` function for text matching on `body.text`.
+
+### Executive dashboard shows no data
+
+**Causes:**
+- Missing custom data views (`logs*`, `traces-*`) — the deployer creates these, but verify
+- Wrong time range — ensure it covers "now"
+- TSDB gauge metrics require `average` for metric tiles and `max` for time series charts
 
 ---
 
-## 7. Docker Issues
+## 7. AI Agent & Workflows
 
-### Docker Compose version mismatch
+### Workflow does not trigger
 
-**Symptoms:** `docker compose` commands fail with syntax errors.
+**Symptoms:** Alert fires but no workflow execution appears.
 
-**Solutions:**
-- Docker Compose V2 (plugin): Use `docker compose` (no hyphen)
-- Docker Compose V1 (standalone): Use `docker-compose` (with hyphen)
-- The setup and teardown scripts try both automatically
+**Check:**
+- The alert rule has a workflow action configured (system connector `.workflows`)
+- The workflow exists and has `type: alert` trigger
+- Check workflow executions: Kibana > Workflows > Executions
 
-### Container cannot resolve DNS
+### AI agent times out or fails
 
-**Symptoms:** OTel Collector logs show DNS resolution failures.
-
-**Solution:**
-```bash
-# Check Docker DNS
-docker compose exec otel-collector nslookup your-elastic-endpoint.es.cloud.es.io
-
-# If DNS fails, add a DNS server to docker-compose.yml:
-# services:
-#   otel-collector:
-#     dns:
-#       - 8.8.8.8
-```
-
-### Out of disk space
-
-**Symptoms:** Docker build fails or containers crash with I/O errors.
-
-**Solution:**
-```bash
-# Check disk usage
-df -h
-
-# Clean up Docker resources
-docker system prune -f
-docker volume prune -f
-```
-
----
-
-## 8. Performance Issues
-
-### High CPU usage
-
-**Symptoms:** The NOVA-7 container uses excessive CPU.
-
-**Cause:** Nine services each emit telemetry every 1.5-3 seconds. This is normal but can be adjusted.
-
-**Solution:** The emission interval is controlled in `app/services/base_service.py`:
-```python
-interval = random.uniform(1.5, 3.0)  # Increase these values to reduce CPU
-```
-
-### OTel Collector memory growing
-
-**Symptoms:** The collector container's memory usage increases over time.
-
-**Solution:** The collector config includes a memory limiter:
-```yaml
-processors:
-  memory_limiter:
-    limit_mib: 256
-    check_interval: 1s
-```
-
-If 256 MiB is not enough, increase the limit. If it is still growing, check for export backpressure (slow Elastic endpoint).
-
-### Slow Elastic ingestion
-
-**Symptoms:** Data appears in Kibana with significant delay (more than 30 seconds).
+**Symptoms:** Workflow execution shows agent step failed.
 
 **Common causes:**
 
 | Cause | Solution |
 |-------|----------|
-| Elastic cluster is overloaded | Scale up or reduce telemetry volume |
-| Collector batch size too large | Reduce `send_batch_size` in collector config |
-| Network latency to Elastic Cloud | Choose a closer cloud region |
-| Index refresh interval | Default is 1s; should be fine for demos |
+| "Input is too long for requested model" | Search steps before the agent need to return less data — check `size` parameter |
+| Agent step timeout | Agent investigation takes 2-3 minutes; ensure workflow timeout is sufficient |
+| Agent tools return errors | Verify ES|QL tools work by testing the queries directly in Kibana Dev Tools |
+| Agent not found | Re-deploy the scenario to recreate the agent |
+
+### Email notification not sent
+
+**Symptoms:** Workflow completes but no email arrives.
+
+**Check:**
+- Email step uses `Elastic-Cloud-SMTP` connector — this is a preconfigured system connector
+- Verify the `user_email` is being extracted correctly from the event
+- Check workflow execution details for the email step output
+
+---
+
+## 8. Process Management
+
+### Restarting the app
+
+The app does not have hot-reload. After code changes:
+
+```bash
+# Find and kill the existing process
+sudo kill $(sudo lsof -t -i:80)
+
+# Restart
+sudo nohup python3 -m uvicorn app.main:app --host 0.0.0.0 --port 80 &
+```
+
+### App process dies unexpectedly
+
+**Check:**
+- Memory usage — 9 services + 7 generators can use significant memory
+- Python exceptions — check nohup.out or stderr logs
+- Disk space — SQLite store and Python cache need disk
+
+### Multiple deployments
+
+The platform supports multi-tenancy. Multiple scenarios can run simultaneously, each with their own deployment ID and telemetry pipeline. If you see unexpected behavior, check which deployments are active:
+
+```bash
+curl -s http://localhost/api/deployments | python3 -m json.tool
+```
 
 ---
 
@@ -411,19 +333,18 @@ If 256 MiB is not enough, increase the limit. If it is still growing, check for 
 
 If none of the above resolves your issue:
 
-1. Collect diagnostic information:
+1. **Collect diagnostic info:**
    ```bash
-   docker compose ps
-   docker compose logs --tail 100 nova7
-   docker compose logs --tail 100 otel-collector
-   curl -s http://localhost:8080/api/status | python3 -m json.tool
-   ```
-
-2. Check the version:
-   ```bash
-   docker compose version
-   docker --version
+   curl -s http://localhost/health
+   curl -s http://localhost/api/status | python3 -m json.tool
+   curl -s http://localhost/api/deployments | python3 -m json.tool
+   ps aux | grep uvicorn
    python3 --version
    ```
 
-3. Open an issue with the diagnostic output attached.
+2. **Check app logs** — look for Python tracebacks and OTLP errors
+
+3. **Validate Elastic connectivity:**
+   ```bash
+   curl -s -H "Authorization: ApiKey <your-api-key>" "<your-elastic-url>/_cluster/health" | python3 -m json.tool
+   ```

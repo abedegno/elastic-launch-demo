@@ -80,14 +80,10 @@ Each scenario provides its own services, fault channels, UI theme, terminology, 
 - An EC2 instance (or similar server) with Python 3.11+
 - An Elastic Cloud deployment with an API key
 
-### 2. Configure
+### 2. Install Dependencies
 
 ```bash
-cp .env.example .env
-# Edit .env — set at minimum:
-#   ELASTIC_URL, ELASTIC_API_KEY, KIBANA_URL
-#   OTLP_ENDPOINT (your Elastic OTLP endpoint)
-#   OTLP_API_KEY
+pip install -r requirements.txt
 ```
 
 ### 3. Start the App

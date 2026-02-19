@@ -1,6 +1,6 @@
-# NOVA-7 Setup Guide — Full Deployment from Scratch
+# Setup Guide — Full Deployment from Scratch
 
-This guide walks through every step to get the NOVA-7 Launch Demo running, from zero to a fully functional demo environment.
+This guide walks through every step to get the Elastic Observability Demo Platform running, from zero to a fully functional demo environment.
 
 ---
 
@@ -8,48 +8,39 @@ This guide walks through every step to get the NOVA-7 Launch Demo running, from 
 
 1. [Prerequisites](#1-prerequisites)
 2. [Elastic Cloud Setup](#2-elastic-cloud-setup)
-3. [Clone the Repository](#3-clone-the-repository)
-4. [Configure Environment Variables](#4-configure-environment-variables)
-5. [Build and Deploy](#5-build-and-deploy)
-6. [Verify Telemetry Pipeline](#6-verify-telemetry-pipeline)
-7. [Configure Kibana Dashboards](#7-configure-kibana-dashboards)
-8. [Configure Significant Event Rules](#8-configure-significant-event-rules)
-9. [Optional: Configure Notifications](#9-optional-configure-notifications)
-10. [Optional: Configure AI Agent](#10-optional-configure-ai-agent)
-11. [Running the Demo](#11-running-the-demo)
+3. [Clone and Install](#3-clone-and-install)
+4. [Start the Application](#4-start-the-application)
+5. [Deploy a Scenario](#5-deploy-a-scenario)
+6. [Verify Telemetry](#6-verify-telemetry)
+7. [Run the Demo](#7-run-the-demo)
 
 ---
 
 ## 1. Prerequisites
 
-### Required Software
+### Required
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Docker | 20.10+ | Container runtime |
-| Docker Compose | 2.x+ | Multi-container orchestration |
-| curl | any | Health checks and API calls |
-| A web browser | modern | Dashboard and Kibana |
+| Requirement | Details |
+|-------------|---------|
+| Server | EC2 instance (Amazon Linux 2023, Ubuntu, etc.) or any Linux host |
+| Python | 3.11+ with pip |
+| Elastic Cloud | A deployment with Elasticsearch and Kibana |
+| Network | Outbound HTTPS to Elastic Cloud |
 
-### Required Accounts
+### Python Dependencies
 
-| Service | Purpose | Free Tier Available |
-|---------|---------|---------------------|
-| Elastic Cloud | Telemetry storage and analysis | Yes (14-day trial) |
+```bash
+pip install -r requirements.txt
+```
 
-### Optional Accounts
+Key packages: `fastapi`, `uvicorn`, `httpx[http2]`
 
-| Service | Purpose | Free Tier Available |
-|---------|---------|---------------------|
-| Twilio | SMS and voice call alerts | Yes (trial credits) |
-| Slack | Webhook notifications | Yes |
+### Elastic Cloud Requirements
 
-### System Requirements
-
-- **CPU:** 2+ cores
-- **RAM:** 4 GB minimum (8 GB recommended)
-- **Disk:** 2 GB for Docker images
-- **Network:** Outbound HTTPS to Elastic Cloud
+The demo requires a Serverless or hosted Elastic Cloud deployment with:
+- Elasticsearch endpoint URL
+- Kibana endpoint URL
+- An API key with sufficient permissions (see below)
 
 ---
 
@@ -58,338 +49,183 @@ This guide walks through every step to get the NOVA-7 Launch Demo running, from 
 ### Create a Deployment
 
 1. Sign up or log in at [cloud.elastic.co](https://cloud.elastic.co)
-2. Create a new deployment:
-   - **Name:** `nova7-demo` (or your preference)
-   - **Cloud provider:** Any (AWS, GCP, or Azure)
-   - **Region:** Choose one close to you
-   - **Version:** 8.x (latest)
-   - **Size:** The smallest tier works fine for demos
+2. Create a new deployment (any cloud provider and region)
 3. Wait for the deployment to become healthy
 
-### Get Your Credentials
-
-#### Elasticsearch Endpoint
-
-1. In the Elastic Cloud console, go to your deployment
-2. Click **Manage** next to Elasticsearch
-3. Copy the **Endpoint URL** (e.g., `https://my-deploy-abc123.es.us-central1.gcp.cloud.es.io:443`)
-
-#### API Key
+### Create an API Key
 
 1. Open Kibana for your deployment
 2. Go to **Stack Management** > **Security** > **API Keys**
 3. Click **Create API Key**
-4. Configure:
-   - **Name:** `nova7-otel-collector`
-   - **Expiration:** Set to your demo timeframe or "Never"
-   - **Privileges:** (use the JSON editor)
-     ```json
-     {
-       "index": [
-         {
-           "names": ["logs-*", "metrics-*", "traces-*"],
-           "privileges": ["create_index", "create_doc", "auto_configure", "write"]
-         }
-       ]
-     }
-     ```
-5. Click **Create API Key** and copy the Base64-encoded key
+4. Configure with broad permissions (the demo needs to create indices, data views, rules, workflows, agents, and dashboards):
+   ```json
+   {
+     "superuser": true
+   }
+   ```
+   Or for more restrictive access, the key needs write access to `logs-*`, `metrics-*`, `traces-*` indices, plus Kibana API access for dashboards, rules, workflows, agent builder, and saved objects.
+5. Copy the Base64-encoded key
+
+### Collect Your Endpoints
+
+You need three URLs from your Elastic Cloud deployment:
+
+| Value | Where to Find It | Example |
+|-------|-------------------|---------|
+| Elasticsearch URL | Cloud console > Manage > Elasticsearch endpoint | `https://my-deploy.es.us-central1.gcp.cloud.es.io:443` |
+| Kibana URL | Cloud console > Manage > Kibana endpoint | `https://my-deploy.kb.us-central1.gcp.cloud.es.io:443` |
+| OTLP Endpoint | Cloud console > Manage > OTLP endpoint | `https://my-deploy.apm.us-central1.gcp.cloud.es.io:443` |
 
 ---
 
-## 3. Clone the Repository
+## 3. Clone and Install
 
 ```bash
 git clone <repo-url> elastic-launch-demo
 cd elastic-launch-demo
+pip install -r requirements.txt
 ```
 
-Verify the project structure:
-
-```bash
-ls -la
-# Should show: app/ docs/ docker-compose.yml Dockerfile setup.sh teardown.sh etc.
-```
+> **Note:** No manual `.env` configuration is needed. You will enter your Elastic Cloud credentials through the web UI when deploying a scenario (step 5). The app persists them automatically.
 
 ---
 
-## 4. Configure Environment Variables
+## 4. Start the Application
+
+The app runs as a single Python process:
 
 ```bash
-cp .env.example .env
+sudo python3 -m uvicorn app.main:app --host 0.0.0.0 --port 80
 ```
 
-Edit `.env` with your editor of choice:
+To run in the background:
 
 ```bash
-# Required — set these
-ELASTIC_ENDPOINT=https://your-deployment.es.cloud.es.io:443
-ELASTIC_API_KEY=your-base64-encoded-api-key
-
-# These defaults are fine for Docker deployments
-OTLP_ENDPOINT=http://otel-collector:4318
-APP_PORT=8080
-APP_HOST=0.0.0.0
+sudo nohup python3 -m uvicorn app.main:app --host 0.0.0.0 --port 80 &
 ```
 
-### Validate Configuration
+Verify it is running:
 
 ```bash
-./setup.sh --dry-run
+curl http://localhost/health
 ```
 
-This checks all environment variables and prerequisites without making any changes.
-
----
-
-## 5. Build and Deploy
-
-### Automated Setup
-
-```bash
-./setup.sh
-```
-
-The setup script will:
-1. Check prerequisites (Docker, docker-compose, curl)
-2. Load and validate environment variables
-3. Verify project structure
-4. Test Elastic Cloud connectivity
-5. Build Docker images
-6. Start containers
-7. Run health checks
-
-### Manual Setup (if you prefer)
-
-```bash
-# Build
-docker compose build
-
-# Start
-docker compose up -d
-
-# Verify
-curl http://localhost:8080/health
-```
-
-### Check Logs
-
-```bash
-# All services
-docker compose logs -f
-
-# Just the NOVA-7 app
-docker compose logs -f nova7
-
-# Just the OTel collector
-docker compose logs -f otel-collector
-```
-
----
-
-## 6. Verify Telemetry Pipeline
-
-### Check NOVA-7 Health
-
-```bash
-curl -s http://localhost:8080/health | python3 -m json.tool
-```
-
-Expected:
+Expected response:
 ```json
-{
-    "status": "ok",
-    "mission": "NOVA-7"
-}
+{"status": "ok"}
 ```
 
-### Check System Status
+> **Note:** The app runs on port 80 (requires root/sudo). There is no hot-reload — restart the process after code changes by killing the existing process and re-launching.
+
+---
+
+## 5. Deploy a Scenario
+
+### Option A: Web UI (Recommended)
+
+1. Open `http://<your-host>/` in a browser
+2. The **Scenario Selector** page shows all available industry verticals
+3. Choose a scenario (e.g., "NOVA-7 Launch Control" for space)
+4. Enter your Elastic Cloud credentials (auto-detected if previously configured)
+5. Click **Launch**
+
+The Python deployer will automatically:
+- Test connectivity to Elastic Cloud
+- Deploy 3 workflows (notification, remediation, escalation)
+- Index 20 knowledge base documents (one per fault channel)
+- Create 7-8 AI agent tools (ES|QL queries, service checks, etc.)
+- Create the AI agent with a scenario-specific system prompt
+- Create 20 significant event definitions (ES|QL rules)
+- Create required data views (`logs*`, `traces-*`)
+- Import the executive dashboard
+- Create 20 alert rules with workflow actions
+
+Progress is shown in real-time on the selector page.
+
+### Option B: API
 
 ```bash
-curl -s http://localhost:8080/api/status | python3 -m json.tool
+curl -X POST http://localhost/api/setup/launch \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "scenario_id": "space",
+    "elastic_url": "https://your-deploy.es.cloud.es.io:443",
+    "elastic_api_key": "your-key",
+    "kibana_url": "https://your-deploy.kb.cloud.es.io:443",
+    "otlp_endpoint": "https://your-deploy.apm.cloud.es.io:443",
+    "otlp_api_key": "your-key"
+  }'
 ```
 
-This should show all nine services in NOMINAL status.
+Monitor progress:
+
+```bash
+curl http://localhost/api/setup/progress?deployment_id=<id>
+```
+
+---
+
+## 6. Verify Telemetry
+
+### Check Services Are Running
+
+```bash
+curl -s http://localhost/api/status | python3 -m json.tool
+```
+
+All 9 services should show NOMINAL status.
 
 ### Verify Data in Kibana
 
-1. Open Kibana for your Elastic deployment
+1. Open Kibana for your deployment
 2. Go to **Discover**
-3. Select the `logs-*` data view (create one if it doesn't exist)
-4. You should see log entries arriving with:
-   - `service.name`: mission-control, fuel-system, navigation, etc.
-   - `service.namespace`: nova7
-   - `cloud.provider`: aws, gcp, azure
-   - Various severity levels (INFO, DEBUG, WARN)
+3. Select the `logs-*` data view
+4. You should see log entries with:
+   - `service.name` — the 9 scenario services
+   - `severity_text` — INFO, DEBUG, WARN
+   - `body.text` — structured log messages
+   - `host.name` — simulated hosts
 
 ### Verify Metrics
 
-1. In Kibana, go to **Discover** with the `metrics-*` data view
-2. Look for metric names like gauge values from the services
+In Kibana Discover with the `metrics-*` data view, look for:
+- `system.*` host metrics (CPU, memory, disk, network)
+- `k8s.*` Kubernetes metrics (nodes, pods, containers)
+- `nginx.*` web server metrics
 
 ### Verify Traces
 
-1. In Kibana, navigate to **APM** > **Traces** or use the `traces-*` data view
-2. Look for spans from nova7 services
+In Kibana **APM** > **Services**, look for the scenario's services with distributed traces.
+
+### Verify Elastic Resources
+
+After deployment, check in Kibana:
+- **Observability** > **Streams** — 20 significant event definitions
+- **Security** > **Rules** — 20 alert rules
+- **Dashboards** — Executive dashboard
+- **AI Agent** — Configured agent with tools and KB
 
 ---
 
-## 7. Configure Kibana Dashboards
+## 7. Run the Demo
 
-### Recommended Views
-
-Create these saved searches and dashboards in Kibana:
-
-#### Discover Saved Search: "NOVA-7 All Logs"
-
-- Index pattern: `logs-*`
-- Filter: `service.namespace: nova7`
-- Columns: `@timestamp`, `service.name`, `severity_text`, `body`, `cloud.provider`
-
-#### Discover Saved Search: "NOVA-7 Errors Only"
-
-- Index pattern: `logs-*`
-- Filter: `service.namespace: nova7 AND severity_text: ERROR`
-- Columns: `@timestamp`, `service.name`, `error.type`, `body`, `exception.stacktrace`
-
-#### Dashboard: "NOVA-7 Mission Overview"
-
-Create a dashboard with:
-- Log volume over time (broken down by severity)
-- Service health table (log count by service.name and severity_text)
-- Error rate visualization
-- Cloud provider distribution pie chart
-- Metric gauges for key readings
-
----
-
-## 8. Configure Significant Event Rules
-
-To get automatic anomaly detection, create ES|QL rules in Elastic:
-
-### Example Rule: Fuel Pressure Anomaly
-
-1. Go to **Security** > **Rules** > **Create New Rule**
-2. Select **ES|QL** rule type
-3. Query:
-   ```esql
-   FROM logs-*
-   | WHERE service.namespace == "nova7"
-     AND error.type == "FuelPressureException"
-     AND @timestamp > NOW() - 2 minutes
-   | STATS error_count = COUNT(*) BY service.name
-   | WHERE error_count > 5
-   ```
-4. Set schedule to run every 1 minute
-5. Configure actions (webhook to NOVA-7 remediation endpoint, Slack, etc.)
-
-### Example Rule: Any Channel Error Spike
-
-```esql
-FROM logs-*
-| WHERE service.namespace == "nova7"
-  AND severity_text == "ERROR"
-  AND error.type IS NOT NULL
-  AND @timestamp > NOW() - 2 minutes
-| STATS error_count = COUNT(*) BY error.type, service.name
-| WHERE error_count > 5
-```
-
----
-
-## 9. Optional: Configure Notifications
-
-### Twilio (SMS + Voice)
-
-1. Create a Twilio account at [twilio.com](https://www.twilio.com/)
-2. Get a phone number
-3. Find your Account SID and Auth Token on the console dashboard
-4. Add to `.env`:
-   ```
-   TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   TWILIO_AUTH_TOKEN=your_auth_token
-   TWILIO_FROM_NUMBER=+1XXXXXXXXXX
-   TWILIO_TO_NUMBER=+1XXXXXXXXXX
-   ```
-5. For voice calls, the TwiML templates need to be served at a public URL. Options:
-   - Host them on a public web server
-   - Use ngrok to expose a local URL
-   - Use Twilio's TwiML Bins feature
-
-### Slack
-
-1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps)
-2. Enable **Incoming Webhooks**
-3. Add a webhook to your desired channel
-4. Copy the webhook URL
-5. Add to `.env`:
-   ```
-   SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXX
-   ```
-
----
-
-## 10. Optional: Configure AI Agent
-
-The NOVA-7 demo can integrate with AI agents for automated investigation. Options:
-
-### Elastic AI Assistant
-
-Use Elastic's built-in AI Assistant to investigate alerts. Configure an LLM connector in Kibana under **Stack Management** > **Connectors**.
-
-### Custom Agent via Elastic Workflow
-
-Create an Elastic workflow that:
-1. Triggers on the significant event rule
-2. Queries Elastic for related logs, metrics, and traces
-3. Sends context to an LLM for analysis
-4. Calls the NOVA-7 remediation API: `POST /api/remediate/{channel}`
-
----
-
-## 11. Running the Demo
-
-1. Open the dashboard: http://localhost:8080/dashboard
-2. Open the chaos UI: http://localhost:8080/chaos
+1. Open the dashboard: `http://<host>/dashboard`
+2. Open the chaos controller: `http://<host>/chaos`
 3. Open Kibana in another tab
-4. Follow the [DEMO_SCRIPT.md](DEMO_SCRIPT.md) talk track
+4. Follow the [Demo Script](DEMO_SCRIPT.md) talk track
 
 ### Quick Test
 
 ```bash
 # Trigger a fault
-curl -X POST http://localhost:8080/api/chaos/trigger \
+curl -X POST http://<host>/api/chaos/trigger \
   -H 'Content-Type: application/json' \
   -d '{"channel": 2}'
 
 # Check status
-curl -s http://localhost:8080/api/chaos/status/2
+curl -s http://<host>/api/chaos/status/2
 
 # Resolve
-curl -X POST http://localhost:8080/api/remediate/2
+curl -X POST http://<host>/api/remediate/2
 ```
 
----
-
-## Appendix: Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Docker Compose                        │
-│                                                         │
-│  ┌─────────────┐        ┌──────────────────────┐       │
-│  │   NOVA-7     │ OTLP   │  OTel Collector      │       │
-│  │   FastAPI    │───────>│  (contrib 0.96.0)    │       │
-│  │   :8080      │  HTTP   │  :4317 gRPC          │       │
-│  │             │        │  :4318 HTTP          │       │
-│  └─────────────┘        └──────────┬───────────┘       │
-│                                    │                    │
-└────────────────────────────────────│────────────────────┘
-                                     │ HTTPS
-                                     ▼
-                          ┌──────────────────────┐
-                          │   Elastic Cloud       │
-                          │   Elasticsearch       │
-                          │   Kibana             │
-                          └──────────────────────┘
-```
