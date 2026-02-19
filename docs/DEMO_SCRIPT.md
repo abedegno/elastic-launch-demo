@@ -1,20 +1,29 @@
-# NOVA-7 Demo Script — Presenter Talk Track
+# Demo Script — Presenter Talk Track
 
 > **Duration:** 15-25 minutes (adjustable)
 > **Audience:** SEs, prospects, partners, or internal teams
-> **Setup:** Ensure the NOVA-7 app is running and Elastic/Kibana is accessible. See [SETUP_GUIDE.md](SETUP_GUIDE.md) for deployment instructions.
+> **Setup:** Ensure the platform is running and a scenario is deployed. See [SETUP_GUIDE.md](SETUP_GUIDE.md).
 
 ---
 
 ## Pre-Demo Checklist
 
-- [ ] NOVA-7 app is running (`http://localhost:8080/health` returns OK)
-- [ ] Elastic/Kibana is accessible and receiving telemetry
-- [ ] Dashboard is open at `http://localhost:8080/dashboard`
-- [ ] Chaos UI is open in a separate tab at `http://localhost:8080/chaos`
-- [ ] Kibana Discover/Dashboard views are loaded and showing live data
-- [ ] (Optional) Slack webhook is configured and test message sent
-- [ ] (Optional) Twilio is configured for SMS/voice alerts
+- [ ] App is running (`http://<host>/health` returns OK)
+- [ ] A scenario is deployed (via the scenario selector at `http://<host>/`)
+- [ ] Dashboard is open at `http://<host>/dashboard`
+- [ ] Chaos UI is open in a separate tab at `http://<host>/chaos`
+- [ ] Kibana is accessible and showing live telemetry
+- [ ] (Optional) Verify alert rules are active in Kibana > Rules
+
+---
+
+## Opening: Choose Your Scenario
+
+> "What I am about to show you is an observability demo platform. We have six industry verticals to choose from — space launch, sports streaming, financial services, healthcare, gaming, and insurance. Each one simulates nine microservices running across AWS, GCP, and Azure, all generating real OpenTelemetry telemetry that flows into Elastic."
+
+If selecting a scenario live:
+
+> "Let me pick [scenario name] for this audience. I will connect it to our Elastic Cloud deployment — and watch: the platform automatically provisions everything in Elastic. AI agent, investigation tools, alert rules, workflows, dashboards, knowledge base — all configured in about a minute."
 
 ---
 
@@ -22,35 +31,29 @@
 
 **Duration:** ~5 minutes
 
-### Opening
-
-> "Welcome to the NOVA-7 launch control demo. What you are seeing is a simulated multi-cloud space launch mission — nine microservices running across AWS, GCP, and Azure, all generating real OpenTelemetry telemetry that flows into Elastic."
-
 ### Show the Dashboard
 
-Navigate to the NOVA-7 dashboard (`/dashboard`).
+Navigate to the dashboard.
 
-> "This is our mission control dashboard. Each service represents a subsystem of the launch vehicle — propulsion, guidance, communications, payload, ground systems, telemetry relay, validation, and safety."
+> "This is our live dashboard. Each card represents a service — [describe services relevant to the scenario]. They are spread across three cloud providers: AWS, GCP, and Azure."
 
-Point out the service cards showing NOMINAL status across all services.
+Point out the all-green NOMINAL status across services.
 
-> "Every service is currently green — NOMINAL. They are continuously emitting logs, metrics, and traces through OpenTelemetry."
+> "Every service is currently green — NOMINAL. They are continuously emitting logs, metrics, and distributed traces through OpenTelemetry, directly into Elastic."
 
 ### Show Elastic / Kibana
 
-Switch to the Kibana Discover view filtered to `service.namespace: nova7`.
+Switch to Kibana Discover.
 
-> "Here in Elastic, we can see the telemetry arriving in real time. Notice the resource attributes — each log record carries cloud provider, region, availability zone, subsystem, and mission phase metadata."
+> "Here in Elastic, we can see the telemetry arriving in real time. Each log record carries rich metadata — cloud provider, region, subsystem, service name, severity level."
 
 Highlight the multi-cloud aspect:
 
-> "This is a key point for the architecture. The fuel system runs on AWS in us-east-1. Navigation runs on GCP in us-central1. The sensor validator runs on Azure in eastus. Elastic is the single pane of glass that unifies observability across all three clouds."
+> "This is a key architectural point. [Service A] runs on AWS. [Service B] runs on GCP. [Service C] runs on Azure. Elastic is the single pane of glass that unifies observability across all three clouds."
 
-### Show Traces and Metrics
+### Show Background Telemetry
 
-If traces and metrics dashboards are configured:
-
-> "We also have distributed traces showing request flows between services, and gauge metrics tracking sensor readings, temperatures, pressures — all the telemetry a real mission would produce."
+> "Beyond the application logs, we also have host metrics — CPU, memory, disk, network — from simulated infrastructure. Kubernetes metrics for the container orchestration layer. Nginx metrics for the web tier. VPC flow logs for network visibility. And distributed traces showing request flows between services."
 
 ### Transition
 
@@ -64,30 +67,21 @@ If traces and metrics dashboards are configured:
 
 ### Trigger via Chaos UI
 
-Open the Chaos UI (`/chaos`) or use the API directly.
+Open the Chaos Controller or use the API.
 
-Choose a visually impactful channel. Recommended first faults:
-
-| Channel | Name | Why it is good for demos |
-|---------|------|--------------------------|
-| 2 | Fuel Pressure Anomaly | Everyone understands fuel pressure |
-| 7 | S-Band Signal Degradation | Visible cascade to telemetry-relay |
-| 4 | GPS Multipath Interference | Multi-cloud (GCP service) |
-| 12 | Cross-Cloud Relay Latency | Shows the multi-cloud story |
-
-> "I am going to trigger a fault — a fuel pressure anomaly in the propulsion subsystem. Watch the dashboard."
+> "I am going to trigger a fault — [describe the fault]. Watch the dashboard."
 
 Click the trigger button or run:
 
 ```bash
-curl -X POST http://localhost:8080/api/chaos/trigger \
+curl -X POST http://<host>/api/chaos/trigger \
   -H 'Content-Type: application/json' \
-  -d '{"channel": 2, "mode": "calibration"}'
+  -d '{"channel": 2}'
 ```
 
 ### Watch the Dashboard React
 
-> "Immediately, the fuel system and sensor validator services go CRITICAL. And notice — mission control and range safety have gone to WARNING. That is the cascade effect. When a primary subsystem fails, dependent services detect degraded readings."
+> "Immediately, [affected services] go CRITICAL. And notice — [cascade services] have gone to WARNING. That is the cascade effect. When a primary subsystem fails, dependent services detect degraded conditions."
 
 Point out the status changes on the dashboard.
 
@@ -101,69 +95,53 @@ Point out the status changes on the dashboard.
 
 ### Show Error Logs in Kibana
 
-Switch to Kibana Discover. Filter to `error.type: FuelPressureException` or `severity_text: ERROR`.
+Switch to Kibana Discover. Filter to the error type.
 
-> "The error logs are flowing in immediately. Each one carries the exact error type, stack trace, sensor type, and vehicle section. This is not just a generic error message — it is a richly structured signal that Elastic can detect automatically."
+> "The error logs are flowing in immediately. Each one carries the exact error type, stack trace, sensor readings, and subsystem context. This is not a generic error message — it is a richly structured signal."
 
-### Show Significant Event Detection (ES|QL)
+### Show Significant Event Detection
 
-If a significant event rule is configured in Elastic:
-
-> "This is where Elastic's detection engine comes in. We have an ES|QL rule watching for this exact error signature. When the rate of FuelPressureException errors exceeds the threshold, Elastic fires a significant event."
+> "This is where Elastic's detection engine comes in. We have ES|QL rules watching for these error signatures. When the error rate exceeds the threshold, Elastic fires a significant event — an alert."
 
 Show the Alerts view in Kibana.
 
-> "There it is — Elastic has detected the anomaly and created an alert. It knows the channel, the subsystem, the affected services, and the time window."
+> "There it is — Elastic has detected the anomaly. It knows the channel, the subsystem, the affected services, and the time window."
 
 ### Show AI Agent Investigation
 
-If the Elastic AI Assistant or a custom agent is configured:
+> "Now watch this. The alert automatically triggers an Elastic workflow. The workflow runs our AI investigation agent. The agent has tools — it queries Elastic for error logs, checks service health, searches known anomalies, traces the cascade pattern."
 
-> "Now watch this. The significant event automatically triggers an AI investigation agent. The agent queries Elastic — it looks at the error logs, checks the metrics for the fuel system, reviews the traces, and correlates the cascade pattern."
+Show the workflow execution or agent conversation.
 
-Show the agent's investigation output or the workflow execution.
+> "The agent has completed its root cause analysis. It identified the fault, traced the cascade to dependent services, and determined the remediation action."
 
-> "The agent has determined that the fuel pressure in tanks LOX-1 and RP1-2 are outside nominal bounds. It has traced the cascade to mission control and range safety. And it is recommending automated remediation."
+### Show Auto-Remediation
 
-### Show Notifications (if configured)
+> "The workflow includes a remediation step. The AI agent calls back to our platform's remediation API to resolve the fault channel."
 
-> "At the same time, the system has sent an SMS alert to the on-call engineer and posted a structured alert to the Slack channel with a direct link to investigate in Elastic."
+Watch the dashboard — services should return to NOMINAL.
 
-Show the Slack message or SMS on your phone if available.
+> "And an email notification goes out to the on-call engineer with the full RCA summary — what happened, what was affected, and what was done to fix it."
 
 ---
 
-## Act 3: Remediation
+## Act 3: Recovery
 
 **Duration:** ~3-5 minutes
 
-### Automated Remediation
+### Watch Recovery (if not already resolved by the workflow)
 
-> "The Elastic workflow includes a remediation step. It calls the NOVA-7 remediation API to resolve the fault channel."
-
-If using automated remediation via Elastic workflow:
-
-> "Watch the dashboard — the fault is being resolved automatically."
-
-Or trigger manual resolution:
+If demonstrating manual resolution:
 
 ```bash
-curl -X POST http://localhost:8080/api/remediate/2
+curl -X POST http://<host>/api/remediate/2
 ```
 
-### Watch Recovery
+> "The affected services are returning to NOMINAL. The cascade warnings are clearing. Telemetry is flowing cleanly again."
 
-> "The fuel system and sensor validator are returning to NOMINAL. The cascade warnings on mission control and range safety are clearing. Telemetry is flowing cleanly again."
+Switch to Kibana to show the error rate dropping.
 
-Switch to Kibana to show the error rate dropping back to zero.
-
-> "In Elastic, you can see the error rate dropping. The significant event closes. The AI agent logs its resolution. Everything is green."
-
-### Show Resolution Notification
-
-If Slack/Twilio is configured:
-
-> "And the team gets a resolution notification — the fault was automatically detected, investigated, and resolved. Total time from anomaly to resolution: under two minutes, with zero human intervention."
+> "In Elastic, the error rate drops to zero. The alert resolves. Everything is green."
 
 ---
 
@@ -174,31 +152,31 @@ If Slack/Twilio is configured:
 > 1. **Collect** — OpenTelemetry ingests telemetry from nine services across three clouds
 > 2. **Detect** — Elastic's ES|QL rules identify the anomaly in real time
 > 3. **Investigate** — An AI agent queries Elastic to determine root cause
-> 4. **Remediate** — Automated workflows resolve the fault and confirm recovery
+> 4. **Remediate** — Automated workflows resolve the fault and notify the team
 >
-> This is not a contrived demo. This is the same architecture you would use in production — the same OTLP protocol, the same Elastic detection engine, the same AI-powered investigation."
+> This is the same architecture you would use in production — the same OTLP protocol, the same Elastic detection engine, the same AI-powered investigation. And we can switch to any of our six industry scenarios to tell the story that resonates with your environment."
 
 ### Optional: Second Fault
 
-For longer demos, trigger a second fault from a different subsystem to show that the system handles multiple simultaneous faults:
+For longer demos, trigger a second fault from a different subsystem:
 
-> "Let me trigger a second fault — this time in the communications subsystem on GCP. Watch how Elastic correlates two independent faults across different cloud providers."
+> "Let me trigger a second fault — this time in a different subsystem on a different cloud provider. Watch how Elastic correlates two independent faults simultaneously."
 
 ---
 
 ## Q&A Talking Points
 
 **"Is the telemetry real OpenTelemetry?"**
-> Yes. The services emit OTLP JSON over HTTP to a standard OpenTelemetry Collector, which exports to Elastic. The same pipeline works with any OTLP-compatible source.
+> Yes. The services emit OTLP JSON over HTTP directly to Elastic Cloud. The same OTLP protocol works with any OpenTelemetry-compatible source — your existing instrumentation would work the same way.
 
 **"How many channels can be active at once?"**
 > All 20 channels are independent. You can trigger multiple faults simultaneously to demonstrate Elastic's ability to correlate and prioritize.
 
-**"Can this run on my laptop?"**
-> Yes. It is a single Docker Compose stack. The NOVA-7 app and the OTel Collector run in two containers. You just need an Elastic Cloud deployment (or self-hosted cluster) to receive the telemetry.
+**"How does the AI agent work?"**
+> It uses Elastic's Agent Builder — a configured AI agent with parameterized ES|QL tools, a knowledge base of runbooks, and a system prompt tailored to the scenario. When an alert fires, an Elastic workflow invokes the agent, which uses its tools to query Elasticsearch and reason about the root cause.
 
-**"What about the AI agent — is that Elastic's AI Assistant?"**
-> It can work with Elastic's built-in AI Assistant, a custom connector, or any LLM-powered agent that queries Elastic's APIs. The demo architecture is flexible.
+**"Can I add my own scenarios?"**
+> Yes. Each scenario is a Python class inheriting from `BaseScenario` in the `scenarios/` directory. You define 9 services, 20 fault channels, a UI theme, and the scenario framework handles everything else — telemetry generation, chaos injection, dashboard theming, and Elastic resource deployment.
 
-**"How do I add my own fault scenarios?"**
-> Add a new entry to the CHANNEL_REGISTRY in `app/config.py` and the corresponding entry in `channel_definitions.json`. The chaos controller and services pick it up automatically.
+**"What gets deployed to Elastic?"**
+> The Python deployer creates: 3 workflows, 20 alert rules, 20 significant event definitions, 20 KB documents, 7-8 agent tools, an AI agent, data views, and an executive dashboard — all automatically configured for the selected scenario.

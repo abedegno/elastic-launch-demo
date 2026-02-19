@@ -1,142 +1,112 @@
 # SE Quick Start Guide
 
-> Get the NOVA-7 demo running and presenting in under 10 minutes.
+> Get the demo running and presenting in under 10 minutes.
 
 ---
 
 ## 1. Prerequisites
 
 You need:
-- Docker and Docker Compose installed
-- An Elastic Cloud deployment (or self-hosted Elasticsearch 8.x+)
-- An Elastic API key with write access to `logs-*`, `metrics-*`, `traces-*`
+- Access to a running instance of the demo platform (EC2 or similar)
+- An Elastic Cloud deployment with an API key
+- A web browser
 
-## 2. Clone and Configure
+If the platform is not yet running, see [SETUP_GUIDE.md](SETUP_GUIDE.md) for full deployment instructions.
 
-```bash
-git clone <repo-url> elastic-launch-demo
-cd elastic-launch-demo
+## 2. Open the Scenario Selector
 
-cp .env.example .env
-```
+Navigate to `http://<host>/` in your browser. You will see the **Scenario Selector** with 6 industry verticals.
 
-Edit `.env` and set (at minimum):
+## 3. Choose a Scenario
 
-```
-ELASTIC_ENDPOINT=https://your-deployment.es.cloud.es.io:443
-ELASTIC_API_KEY=your-base64-api-key
-```
+Pick the scenario that best fits your audience:
 
-## 3. Deploy
+| Audience | Recommended Scenario | Why |
+|----------|---------------------|-----|
+| General / Technical | **Space** (NOVA-7 Launch Control) | Dramatic, easy to understand, great visuals |
+| Sports / Media | **Fanatics** (Fanatics Live) | Live streaming, real-time engagement |
+| Banking / Finance | **Financial** or **USAA** | Trading systems, compliance, fraud detection |
+| Healthcare / Life Sciences | **Healthcare** | Patient systems, regulatory, clinical data |
+| Gaming / Entertainment | **Gaming** | Real-time multiplayer, matchmaking, payments |
 
-```bash
-./setup.sh
-```
+## 4. Connect and Deploy
 
-This validates your config, builds the container, and starts everything.
+1. Enter your Elastic Cloud credentials (Elasticsearch URL, Kibana URL, OTLP endpoint, API key)
+2. Click **Launch**
+3. Watch the deployer provision everything in Elastic (takes ~1-2 minutes):
+   - Workflows, alert rules, AI agent + tools, knowledge base, dashboards, significant events
 
-## 4. Verify
+## 5. Verify
 
-Open these URLs:
+Once deployment completes, the selector page shows links to:
 
-| URL | What it shows |
-|-----|---------------|
-| http://localhost:8080/health | Health check (should return `{"status": "ok"}`) |
-| http://localhost:8080/dashboard | Mission control dashboard |
-| http://localhost:8080/chaos | Chaos controller UI |
-| Your Kibana URL | Logs flowing into Elastic |
+| Page | What It Shows |
+|------|---------------|
+| Dashboard | Live service status with real-time updates |
+| Chaos Controller | Fault trigger/resolve UI |
+| Kibana | Logs, metrics, traces flowing into Elastic |
 
-## 5. Pick a Channel
+## 6. Pick a Fault Channel
 
-Choose the fault channel that best fits your audience:
+Each scenario has 20 fault channels. Choose the one that best fits your demo narrative.
 
 ### For Security / Ops Audiences
 
-| Channel | Name | Story |
-|---------|------|-------|
-| 19 | Flight Termination System Check Failure | Safety-critical system anomaly |
-| 20 | Range Safety Tracking Loss | Loss of tracking — immediate response needed |
-| 17 | Sensor Validation Pipeline Stall | Pipeline failure affecting all validation |
+Pick channels involving safety-critical systems, pipeline failures, or tracking loss — these resonate with security-focused viewers.
 
 ### For Cloud / Infrastructure Audiences
 
-| Channel | Name | Story |
-|---------|------|-------|
-| 12 | Cross-Cloud Relay Latency | Multi-cloud latency spike (AWS to GCP) |
-| 13 | Relay Packet Corruption | Data integrity failure in cross-cloud relay |
-| 14 | Ground Power Bus Fault | Infrastructure power failure |
+Pick channels involving cross-cloud latency, relay corruption, or power failures — these highlight the multi-cloud story.
 
 ### For Developer / APM Audiences
 
-| Channel | Name | Story |
-|---------|------|-------|
-| 1 | Thermal Calibration Drift | Sensor calibration drift with stack traces |
-| 2 | Fuel Pressure Anomaly | Classic pressure bounds exception |
-| 4 | GPS Multipath Interference | Signal processing error in guidance |
+Pick channels involving calibration drift, pressure anomalies, or signal processing — these show rich stack traces and distributed tracing.
 
 ### For Executive / High-Level Audiences
 
-| Channel | Name | Story |
-|---------|------|-------|
-| 7 | S-Band Signal Degradation | Communications failure (easy to understand) |
-| 2 | Fuel Pressure Anomaly | Fuel system issue (universally relatable) |
-| 11 | Payload Vibration Anomaly | Payload at risk (high stakes narrative) |
-
-## 6. Trigger the Fault
-
-**Option A — Chaos UI**
-
-Open http://localhost:8080/chaos and click the trigger button for your chosen channel.
-
-**Option B — curl**
-
-```bash
-# Replace CHANNEL with the channel number (1-20)
-curl -X POST http://localhost:8080/api/chaos/trigger \
-  -H 'Content-Type: application/json' \
-  -d '{"channel": CHANNEL}'
-```
+Pick channels with simple, universally relatable failures — fuel pressure, communications degradation, payload risk.
 
 ## 7. Demo Flow
 
-1. **Show normal state** — Point out all-green dashboard, telemetry flowing in Kibana
-2. **Trigger the fault** — Watch the dashboard go red/yellow
-3. **Switch to Kibana** — Show error logs with structured attributes
-4. **Show detection** — Elastic alert / significant event fires
-5. **Show investigation** — AI agent analyzes the root cause
-6. **Resolve** — Automated or manual remediation
+1. **Show normal state** — all-green dashboard, telemetry flowing in Kibana
+2. **Trigger a fault** — use the Chaos Controller UI or curl:
+   ```bash
+   curl -X POST http://<host>/api/chaos/trigger \
+     -H 'Content-Type: application/json' \
+     -d '{"channel": 2}'
+   ```
+3. **Watch the dashboard** — services go CRITICAL/WARNING with cascade effects
+4. **Switch to Kibana** — show error logs with structured attributes in Discover
+5. **Show detection** — Elastic alert fires in the Rules / Alerts view
+6. **Show AI investigation** — workflow triggers the AI agent for root cause analysis
+7. **Show remediation** — automated workflow resolves the fault
+8. **Show notification** — user gets email with RCA summary
 
 ## 8. Resolve the Fault
 
-**Option A — Chaos UI**
+**Option A — Chaos Controller UI:** Click the resolve button.
 
-Click the resolve button in the Chaos UI.
-
-**Option B — curl**
-
+**Option B — curl:**
 ```bash
-curl -X POST http://localhost:8080/api/remediate/CHANNEL
+curl -X POST http://<host>/api/remediate/2
 ```
 
-**Option C — Let Elastic Do It**
+**Option C — Let Elastic Do It:** If the full workflow pipeline is configured, the AI agent calls the remediation API automatically after completing its investigation.
 
-If you have an Elastic workflow configured, it will call the remediation API automatically.
+## 9. Multiple Faults
 
-## 9. Teardown
+For longer demos, trigger a second fault from a different subsystem while the first is still active. This shows Elastic correlating multiple independent faults across different cloud providers.
 
-```bash
-./teardown.sh
-```
+---
 
-## Troubleshooting
-
-If something goes wrong, check [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
-
-**Quick fixes:**
+## Troubleshooting Quick Fixes
 
 | Problem | Fix |
 |---------|-----|
-| Dashboard is blank | Hard refresh (Ctrl+Shift+R). Check WebSocket connection. |
-| No data in Kibana | Verify ELASTIC_ENDPOINT and ELASTIC_API_KEY in .env |
-| Container won't start | Run `docker compose logs nova7` to see errors |
-| Port 8080 in use | Change APP_PORT in .env or stop the conflicting service |
+| Dashboard is blank | Hard refresh (Ctrl+Shift+R). Check browser console for errors. |
+| No data in Kibana | Verify credentials in the scenario selector. Check the deployment progress for errors. |
+| Deployment failed | Check the progress panel for the specific step that failed. Common: invalid API key or missing permissions. |
+| Fault trigger has no effect | Check channel status: `curl http://<host>/api/chaos/status/2`. Channel may already be active. |
+| App is not responding | Check if the process is running: `ps aux | grep uvicorn`. Restart if needed. |
+
+For more details, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
