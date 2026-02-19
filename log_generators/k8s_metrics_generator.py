@@ -87,15 +87,16 @@ def _init_pod_data(cluster: dict, seed_offset: int = 0) -> dict:
 class K8sState:
     """Tracks cumulative counters per service."""
 
-    def __init__(self, rng: random.Random):
+    def __init__(self, rng: random.Random, services: list[str] | None = None):
         self._rng = rng
-        self.net_rx = {svc: rng.randint(50_000_000, 100_000_000) for svc in SERVICES}
-        self.net_tx = {svc: rng.randint(70_000_000, 120_000_000) for svc in SERVICES}
-        self.restarts = {svc: 0 for svc in SERVICES}
+        self._services = services or list(SERVICES)
+        self.net_rx = {svc: rng.randint(50_000_000, 100_000_000) for svc in self._services}
+        self.net_tx = {svc: rng.randint(70_000_000, 120_000_000) for svc in self._services}
+        self.restarts = {svc: 0 for svc in self._services}
 
     def tick(self):
         rng = self._rng
-        for svc in SERVICES:
+        for svc in self._services:
             self.net_rx[svc] += rng.randint(10_000, 100_000)
             self.net_tx[svc] += rng.randint(15_000, 120_000)
             if rng.random() < 0.05:
@@ -470,9 +471,13 @@ def _generate_k8s_warning_logs(client: OTLPClient, pod_data: dict, cluster: dict
 def run(client: OTLPClient, stop_event: threading.Event, scenario_data: dict | None = None) -> None:
     """Run K8s metrics generator loop until stop_event is set."""
     rng = random.Random()
-    state = K8sState(rng)
-
     clusters = scenario_data["k8s_clusters"] if scenario_data else CLUSTERS
+
+    # Collect all service names across clusters for state tracking
+    all_services = []
+    for c in clusters:
+        all_services.extend(c["services"])
+    state = K8sState(rng, services=all_services)
 
     # Initialize per-cluster pod data
     cluster_data = []
