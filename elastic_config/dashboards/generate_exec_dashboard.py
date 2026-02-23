@@ -984,7 +984,7 @@ def _build_dashboard_ndjson(
         "gridData": {"h": 2, "i": "p_se_label", "w": 48, "x": 0, "y": 112},
     })
 
-    # p26: Significant Event Logs (datatable with log body, trace.id, span.id)
+    # p26: Significant Event Logs (datatable with trace.id, span.id)
     # Build KQL matching only the error types configured as significant events
     if error_types:
         body_clauses = " OR ".join(f'body.text: "{et}"' for et in error_types)
@@ -993,24 +993,21 @@ def _build_dashboard_ndjson(
         se_kql = 'severity_text: "ERROR"'
 
     lid = uid()
-    cid_body = uid()
     cid_trace = uid()
     cid_span = uid()
     cid_svc = uid()
     cid_count = uid()
     columns = {
-        cid_body: col_terms("body.text", "Log", size=25, order_col_id=cid_count),
         cid_trace: col_terms("trace.id", "Trace ID", size=25, order_col_id=cid_count),
         cid_span: col_terms("span.id", "Span ID", size=5, order_col_id=cid_count),
         cid_svc: col_terms("service.name", "Service", size=10, order_col_id=cid_count),
         cid_count: col_count(label="Count"),
     }
-    layer = make_layer(lid, [cid_body, cid_trace, cid_span, cid_svc, cid_count], columns, DATA_VIEW_ID_LOGS)
+    layer = make_layer(lid, [cid_trace, cid_span, cid_svc, cid_count], columns, DATA_VIEW_ID_LOGS)
     state = make_state(layer, {
         "layerId": lid,
         "layerType": "data",
         "columns": [
-            {"columnId": cid_body, "isTransposed": False},
             {"columnId": cid_trace, "isTransposed": False},
             {"columnId": cid_span, "isTransposed": False},
             {"columnId": cid_svc, "isTransposed": False},
