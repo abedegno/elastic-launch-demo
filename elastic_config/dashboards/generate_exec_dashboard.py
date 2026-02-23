@@ -987,7 +987,9 @@ def _build_dashboard_ndjson(
     # p26: Significant Event Logs (ES|QL datatable with body.text, trace.id, span.id)
     # Build ES|QL WHERE clause matching only configured significant event error types
     if error_types:
-        kql_parts = " OR ".join(f"body.text: {et}" for et in error_types)
+        kql_parts = " OR ".join(
+            f'body.text: \\"{et}\\"' for et in error_types
+        )
         esql_where = f'severity_text == "ERROR" AND KQL("{kql_parts}")'
     else:
         esql_where = 'severity_text == "ERROR"'
@@ -1001,23 +1003,45 @@ def _build_dashboard_ndjson(
     )
 
     lid = uid()
+    adhoc_id = uid()  # ad-hoc data view ID for ES|QL
+
+    def _esql_col(field, es_type, col_type):
+        return {
+            "columnId": uid(),
+            "fieldName": field,
+            "label": field,
+            "customLabel": False,
+            "meta": {"esType": es_type, "type": col_type},
+        }
+
     esql_columns = [
-        {"columnId": uid(), "fieldName": "body.text", "meta": {"type": "string"}},
-        {"columnId": uid(), "fieldName": "trace.id", "meta": {"type": "string"}},
-        {"columnId": uid(), "fieldName": "span.id", "meta": {"type": "string"}},
-        {"columnId": uid(), "fieldName": "service.name", "meta": {"type": "string"}},
-        {"columnId": uid(), "fieldName": "@timestamp", "meta": {"type": "date"}},
+        _esql_col("body.text", "text", "string"),
+        _esql_col("trace.id", "keyword", "string"),
+        _esql_col("span.id", "keyword", "string"),
+        _esql_col("service.name", "keyword", "string"),
+        _esql_col("@timestamp", "date", "date"),
     ]
 
     esql_state = {
-        "adHocDataViews": {},
+        "adHocDataViews": {
+            adhoc_id: {
+                "allowHidden": False,
+                "allowNoIndex": False,
+                "fieldFormats": {},
+                "id": adhoc_id,
+                "name": "logs*",
+                "runtimeFieldMap": {},
+                "sourceFilters": [],
+                "timeFieldName": "@timestamp",
+                "title": "logs*",
+                "type": "esql",
+            }
+        },
         "datasourceStates": {
-            "formBased": {"layers": {}},
-            "indexpattern": {"layers": {}},
             "textBased": {
                 "layers": {
                     lid: {
-                        "index": DATA_VIEW_ID_LOGS,
+                        "index": adhoc_id,
                         "query": {"esql": esql_query},
                         "columns": esql_columns,
                         "timeField": "@timestamp",
@@ -1026,12 +1050,19 @@ def _build_dashboard_ndjson(
             },
         },
         "filters": [],
-        "internalReferences": [],
-        "query": {"language": "kuery", "query": ""},
+        "internalReferences": [
+            {
+                "id": adhoc_id,
+                "name": f"textBasedLanguages-datasource-layer-{lid}",
+                "type": "index-pattern",
+            }
+        ],
+        "query": {"esql": esql_query},
         "visualization": {
             "layerId": lid,
             "layerType": "data",
             "columns": [{"columnId": c["columnId"]} for c in esql_columns],
+            "paging": {"enabled": True, "size": 10},
         },
     }
 
