@@ -20,7 +20,7 @@ inputs:
   - name: action_type
     type: string
     required: true
-    description: "Remediation action: restart_service, reset_pipeline, failover_service, isolate_subsystem"
+    description: "Remediation action to execute (scenario-specific, e.g. restart_mobile_gateway, reset_vpc_peering)"
   - name: target_service
     type: string
     default: ""

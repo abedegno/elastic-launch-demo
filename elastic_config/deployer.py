@@ -1088,7 +1088,7 @@ Do NOT write custom ES|QL queries. Use the parameterized tools.
         cascade = ", ".join(ch_data.get("cascade_services", []))
         description = ch_data.get("description", "")
 
-        remediation_action = ch_data.get("remediation_action", "reset_pipeline")
+        remediation_action = ch_data.get("remediation_action", "restart_service")
         investigation_notes = ch_data.get("investigation_notes", "")
         investigation_section = ""
         if investigation_notes:
