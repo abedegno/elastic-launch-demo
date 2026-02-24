@@ -177,6 +177,7 @@
             .then(result => {
                 if (result.status === 'resolved') removeMyChannel(selectedChannel);
                 fetchStatus();
+                refreshSpikes();
             })
             .catch(e => console.error('Resolve failed:', e));
     };
@@ -191,6 +192,7 @@
             .then(result => {
                 if (result.status === 'resolved') removeMyChannel(channel);
                 fetchStatus();
+                refreshSpikes();
             })
             .catch(e => console.error('Resolve failed:', e));
     };
@@ -254,6 +256,18 @@
         wireSlider('spike-memory', 'spike-memory-value', formatPct);
         wireSlider('spike-oom', 'spike-oom-value', formatPct);
         wireSlider('spike-latency', 'spike-latency-value', formatMult);
+    }
+
+    function refreshSpikes() {
+        fetch('/api/chaos/spikes' + qs)
+            .then(r => r.json())
+            .then(data => {
+                setSpikeSlider('spike-cpu', data.cpu_pct || 0, 'spike-cpu-value', formatPct);
+                setSpikeSlider('spike-memory', data.memory_pct || 0, 'spike-memory-value', formatPct);
+                setSpikeSlider('spike-oom', data.k8s_oom_intensity || 0, 'spike-oom-value', formatPct);
+                setSpikeSlider('spike-latency', (data.latency_multiplier || 1.0) * 10, 'spike-latency-value', formatMult);
+            })
+            .catch(() => { /* ignore */ });
     }
 
     function formatPct(val) { return val > 0 ? val + '%' : 'OFF'; }

@@ -97,6 +97,11 @@ class ChaosController:
             ch["callback_url"] = ""
             ch["user_email"] = ""
 
+            # Reset infra spikes if no faults remain active
+            any_active = any(c["state"] == ACTIVE for c in self._channels.values())
+            if not any_active:
+                self._infra_spikes = {k: (1.0 if k == "latency_multiplier" else 0) for k in self._infra_spikes}
+
         ch_def = self._channel_registry[channel]
         logger.info("CHAOS: Channel %d [%s] RESOLVED", channel, ch_def["name"])
         return {
