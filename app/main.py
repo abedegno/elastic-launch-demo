@@ -412,9 +412,7 @@ async def chaos_status(deployment_id: Optional[str] = None):
     inst = _get_instance(deployment_id)
     if not inst:
         return {}
-    status = inst.chaos_controller.get_status()
-    status["_infra_spikes"] = inst.chaos_controller.get_infra_spikes()
-    return status
+    return inst.chaos_controller.get_status()
 
 
 @app.get("/api/chaos/status/{channel}")
