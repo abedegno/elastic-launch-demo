@@ -88,14 +88,13 @@
             }
         }
 
-        // Update text and disabled state in-place (no rebuild)
+        // Update text in-place (no rebuild); never disable options
         for (let i = 1; i < select.options.length; i++) {
             const opt = select.options[i];
             const ch = data[opt.value];
             if (!ch) continue;
             const label = `CH-${String(opt.value).padStart(2, '0')}: ${ch.name}`;
             opt.textContent = ch.state === 'ACTIVE' ? label + ' [IN USE]' : label;
-            opt.disabled = ch.state === 'ACTIVE';
         }
     }
 
