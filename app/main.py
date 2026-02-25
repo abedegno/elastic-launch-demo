@@ -513,6 +513,82 @@ async def notify_email(body: dict):
     return result
 
 
+# ── Daily Update Report ────────────────────────────────────────────────────
+
+@app.post("/api/daily-update")
+async def send_daily_update(body: dict):
+    """Trigger the Daily Update Report workflow, which uses the AI assistant
+    to analyse recent logs/traces and emails a health summary."""
+    import httpx as _httpx
+
+    email = body.get("email", "").strip()
+    deployment_id = body.get("deployment_id")
+
+    if not email:
+        return JSONResponse(status_code=400, content={"error": "Missing email"})
+
+    inst = _get_instance(deployment_id)
+    if not inst:
+        return JSONResponse(status_code=404, content={"error": "No active deployment"})
+
+    kibana_url = inst.ctx.kibana_url
+    api_key = inst.ctx.elastic_api_key
+    if not kibana_url or not api_key:
+        return JSONResponse(status_code=400, content={"error": "No Kibana credentials"})
+
+    headers = {
+        "Content-Type": "application/json",
+        "kbn-xsrf": "true",
+        "x-elastic-internal-origin": "kibana",
+        "Authorization": f"ApiKey {api_key}",
+    }
+
+    async with _httpx.AsyncClient(timeout=30) as client:
+        # Find the workflow by name
+        search_resp = await client.post(
+            f"{kibana_url}/api/workflows/search",
+            headers=headers,
+            json={"page": 1, "size": 100},
+        )
+        if search_resp.status_code >= 300:
+            return JSONResponse(
+                status_code=502,
+                content={"error": f"Workflow search failed: {search_resp.status_code}"},
+            )
+
+        search_data = search_resp.json()
+        workflows = search_data.get("results", search_data.get("data", []))
+        wf_id = None
+        for wf in workflows:
+            if "Daily Update Report" in wf.get("name", ""):
+                wf_id = wf["id"]
+                break
+
+        if not wf_id:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Daily Update Report workflow not found — redeploy the scenario"},
+            )
+
+        # Trigger the workflow
+        run_resp = await client.post(
+            f"{kibana_url}/api/workflows/{wf_id}/run",
+            headers=headers,
+            json={"inputs": {"email": email}},
+        )
+        if run_resp.status_code >= 300:
+            return JSONResponse(
+                status_code=502,
+                content={"error": f"Workflow run failed: {run_resp.status_code}"},
+            )
+
+    return {
+        "status": "triggered",
+        "message": "Daily update report requested — check your email in 2-3 minutes",
+        "workflow_id": wf_id,
+    }
+
+
 # ── Setup / Deployer API ───────────────────────────────────────────────────
 
 @app.post("/api/setup/test-connection")

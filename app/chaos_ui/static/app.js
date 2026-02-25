@@ -325,6 +325,46 @@
             .catch(e => console.error('Failed to update spikes:', e));
     }
 
+    // ── Daily Update Report ─────────────────────────────────────
+    window.sendDailyUpdate = function () {
+        const email = (document.getElementById('user-email').value || '').trim();
+        if (!email) {
+            alert('Please enter an operator email address first.');
+            return;
+        }
+
+        const btn = document.getElementById('btn-daily-update');
+        const statusEl = document.getElementById('update-status');
+        btn.disabled = true;
+        btn.textContent = 'SENDING...';
+        statusEl.textContent = '';
+        statusEl.className = 'update-status';
+
+        fetch('/api/daily-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email, deployment_id: deployId || undefined }),
+        })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    statusEl.textContent = data.message || 'Report requested — check email in 2-3 min';
+                    statusEl.classList.add('success');
+                } else {
+                    statusEl.textContent = data.error || 'Request failed';
+                    statusEl.classList.add('error');
+                }
+            })
+            .catch(() => {
+                statusEl.textContent = 'Network error — could not reach server';
+                statusEl.classList.add('error');
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.textContent = 'SEND DAILY UPDATE';
+            });
+    };
+
     // ── Start ─────────────────────────────────────────────────
     init();
     initSpikes();

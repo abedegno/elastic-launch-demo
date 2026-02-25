@@ -62,12 +62,13 @@ def _build_resource(service_name: str, services: dict | None = None, namespace: 
     _services = services or SERVICES
     _namespace = namespace or NAMESPACE
     cfg = _services[service_name]
+    language = cfg.get("language", "python")
     attrs = {
         "service.name": service_name,
         "service.namespace": _namespace,
         "service.version": "1.0.0",
         "service.instance.id": f"{service_name}-001",
-        "telemetry.sdk.language": cfg.get("language", "python"),
+        "telemetry.sdk.language": language,
         "telemetry.sdk.name": "opentelemetry",
         "telemetry.sdk.version": "1.24.0",
         "cloud.provider": cfg["cloud_provider"],
@@ -82,6 +83,41 @@ def _build_resource(service_name: str, services: dict | None = None, namespace: 
         "data_stream.dataset": "generic",
         "data_stream.namespace": "default",
     }
+    # Add process.runtime attributes so Elastic APM can identify the runtime
+    _RUNTIME_ATTRS = {
+        "java": {
+            "process.runtime.name": "OpenJDK Runtime Environment",
+            "process.runtime.version": "21.0.5+11-LTS",
+            "process.runtime.description": "Eclipse Adoptium OpenJDK 64-Bit Server VM 21.0.5+11-LTS",
+        },
+        "python": {
+            "process.runtime.name": "CPython",
+            "process.runtime.version": "3.12.3",
+            "process.runtime.description": "CPython 3.12.3",
+        },
+        "go": {
+            "process.runtime.name": "go",
+            "process.runtime.version": "go1.22.4",
+            "process.runtime.description": "go1.22.4 linux/amd64",
+        },
+        "dotnet": {
+            "process.runtime.name": ".NET",
+            "process.runtime.version": "8.0.6",
+            "process.runtime.description": ".NET 8.0.6",
+        },
+        "rust": {
+            "process.runtime.name": "rustc",
+            "process.runtime.version": "1.79.0",
+            "process.runtime.description": "rustc 1.79.0",
+        },
+        "cpp": {
+            "process.runtime.name": "gcc",
+            "process.runtime.version": "13.2.0",
+            "process.runtime.description": "GCC 13.2.0",
+        },
+    }
+    if language in _RUNTIME_ATTRS:
+        attrs.update(_RUNTIME_ATTRS[language])
     return {
         "attributes": _format_attributes(attrs),
         "schemaUrl": SCHEMA_URL,

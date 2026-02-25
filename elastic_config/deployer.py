@@ -204,7 +204,7 @@ class ScenarioDeployer:
             results["knowledge_base"] = resp.status_code < 300
 
             # Delete audit indices and remediation queue
-            for suffix in ["significant-events-audit", "remediation-audit", "escalation-audit", "remediation-queue"]:
+            for suffix in ["significant-events-audit", "remediation-audit", "escalation-audit", "remediation-queue", "daily-report-audit"]:
                 client.delete(
                     f"{self.elastic_url}/{self.ns}-{suffix}",
                     headers=_es_headers(self.api_key),
@@ -328,7 +328,7 @@ class ScenarioDeployer:
                 _notify(progress)
                 try:
                     deleted = 0
-                    for suffix in ["significant-events-audit", "remediation-audit", "escalation-audit", "remediation-queue"]:
+                    for suffix in ["significant-events-audit", "remediation-audit", "escalation-audit", "remediation-queue", "daily-report-audit"]:
                         r = client.delete(
                             f"{self.elastic_url}/{self.ns}-{suffix}",
                             headers=_es_headers(self.api_key),
@@ -569,7 +569,7 @@ class ScenarioDeployer:
         notify(self.progress)
 
     def _generate_workflow_yamls(self) -> dict[str, str]:
-        """Generate 3 workflow YAMLs templated for this scenario."""
+        """Generate 4 workflow YAMLs templated for this scenario."""
         ns = self.ns
         scenario_name = self.scenario.scenario_name
         agent_cfg = self.scenario.agent_config
@@ -1588,6 +1588,7 @@ When the user asks you to fix or remediate this issue, use remediation_action to
                 "remediation-audit",
                 "escalation-audit",
                 "remediation-queue",
+                "daily-report-audit",
             ]:
                 try:
                     r = client.delete(

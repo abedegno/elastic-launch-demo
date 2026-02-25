@@ -58,6 +58,15 @@ ALL_POOLS = HEAP_POOLS + NON_HEAP_POOLS
 # Thread states
 THREAD_STATES = ["runnable", "blocked", "waiting", "timed_waiting"]
 
+# GC definitions: (gc_name, gc_action)
+GC_TYPES = [
+    ("G1 Young Generation", "end of minor GC"),
+    ("G1 Old Generation", "end of major GC"),
+]
+
+# Histogram bucket boundaries for jvm.gc.duration (seconds)
+GC_HISTOGRAM_BOUNDS = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+
 
 def _load_java_services():
     """Return list of (service_name, service_cfg) for Java services."""
@@ -105,6 +114,10 @@ class JvmState:
         self.pool_used = {}
         for pool_name, _, limit_mb in ALL_POOLS:
             self.pool_used[pool_name] = rng.uniform(limit_mb * 0.2, limit_mb * 0.6)
+        # GC cumulative state: {gc_name: (count, sum_seconds)}
+        self.gc_cumulative: dict[str, tuple[int, float]] = {}
+        for gc_name, _ in GC_TYPES:
+            self.gc_cumulative[gc_name] = (rng.randint(500, 5000), rng.uniform(5.0, 50.0))
 
     def tick(self):
         rng = self._rng
@@ -119,6 +132,17 @@ class JvmState:
                 limit_mb * 0.1,
                 min(limit_mb * 0.9, self.pool_used[pool_name] + delta),
             )
+        # Simulate GC events
+        for gc_name, _ in GC_TYPES:
+            count, total_s = self.gc_cumulative[gc_name]
+            is_young = "Young" in gc_name
+            new_events = rng.randint(1, 5) if is_young else (1 if rng.random() < 0.3 else 0)
+            for _ in range(new_events):
+                # Young GC: 5-50ms, Old GC: 50-500ms
+                duration = rng.uniform(0.005, 0.05) if is_young else rng.uniform(0.05, 0.5)
+                total_s += duration
+                count += 1
+            self.gc_cumulative[gc_name] = (count, total_s)
 
 
 def _gauge(name: str, unit: str, value: float, attributes: dict | None = None) -> dict:
@@ -127,6 +151,44 @@ def _gauge(name: str, unit: str, value: float, attributes: dict | None = None) -
     if attributes:
         dp["attributes"] = _format_attributes(attributes)
     return {"name": name, "unit": unit, "gauge": {"dataPoints": [dp]}}
+
+
+def _histogram(
+    name: str,
+    unit: str,
+    count: int,
+    sum_val: float,
+    bounds: list[float],
+    rng: random.Random,
+    attributes: dict | None = None,
+) -> dict:
+    """Build a cumulative histogram metric."""
+    # Distribute count across buckets (weighted toward lower buckets)
+    bucket_counts = [0] * (len(bounds) + 1)
+    for _ in range(count):
+        # Pick a random bucket, biased toward earlier ones
+        idx = min(int(rng.expovariate(3.0) * len(bounds)), len(bounds))
+        bucket_counts[idx] += 1
+    dp: dict = {
+        "timeUnixNano": _now_ns(),
+        "startTimeUnixNano": str(int(time.time() * 1_000_000_000) - 600_000_000_000),  # 10 min window
+        "count": count,
+        "sum": sum_val,
+        "bucketCounts": bucket_counts,
+        "explicitBounds": bounds,
+        "min": sum_val / max(count, 1) * 0.1,
+        "max": sum_val / max(count, 1) * 3.0,
+    }
+    if attributes:
+        dp["attributes"] = _format_attributes(attributes)
+    return {
+        "name": name,
+        "unit": unit,
+        "histogram": {
+            "dataPoints": [dp],
+            "aggregationTemporality": 2,  # CUMULATIVE
+        },
+    }
 
 
 def _generate_metrics(state: JvmState, rng: random.Random) -> list:
@@ -173,6 +235,15 @@ def _generate_metrics(state: JvmState, rng: random.Random) -> list:
     metrics.append(_gauge("jvm.class.count", "{class}", float(current_classes)))
     metrics.append(_gauge("jvm.class.loaded", "{class}", float(state.classes_loaded_total)))
     metrics.append(_gauge("jvm.class.unloaded", "{class}", float(state.classes_unloaded_total)))
+
+    # ── GC Duration (histogram) ──────────────────────────────────────
+    for gc_name, gc_action in GC_TYPES:
+        count, total_s = state.gc_cumulative[gc_name]
+        gc_attrs = {"jvm.gc.name": gc_name, "jvm.gc.action": gc_action}
+        metrics.append(_histogram(
+            "jvm.gc.duration", "s", count, total_s,
+            GC_HISTOGRAM_BOUNDS, rng, gc_attrs,
+        ))
 
     return metrics
 

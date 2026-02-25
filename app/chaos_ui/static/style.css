@@ -301,6 +301,54 @@ body {
     cursor: not-allowed;
 }
 
+/* ── Daily Update Section ───────────────────────────── */
+.daily-update-section {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+
+.btn-daily-update {
+    width: 100%;
+    font-family: 'Space Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    padding: 16px;
+    border: 2px solid var(--advisory);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-transform: uppercase;
+    background: rgba(255, 215, 0, 0.08);
+    color: var(--advisory);
+}
+
+.btn-daily-update:hover:not(:disabled) {
+    background: rgba(255, 215, 0, 0.2);
+    box-shadow: 0 0 30px rgba(255, 215, 0, 0.2);
+}
+
+.btn-daily-update:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.update-status {
+    margin-top: 8px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    min-height: 18px;
+}
+
+.update-status.success {
+    color: var(--nominal);
+}
+
+.update-status.error {
+    color: var(--critical);
+}
+
 /* ── Active Channels List ───────────────────────────── */
 .active-list {
     min-height: 200px;
