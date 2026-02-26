@@ -307,9 +307,9 @@ PALETTE_ERRORS = make_metric_palette([
 ])
 
 PALETTE_ERROR_RATE = make_metric_palette([
-    ("#54B399", 0.02),  # green: 0-2%
-    ("#D6BF57", 0.05),  # yellow: 2-5%
-    ("#E7664C", 1.0),   # red: 5%+
+    ("#54B399", 0.12),  # green: 0-12%
+    ("#D6BF57", 0.20),  # yellow: 12-20%
+    ("#E7664C", 1.0),   # red: 20%+
 ])
 
 PALETTE_THROUGHPUT = make_metric_palette([
