@@ -187,7 +187,7 @@ class RemediationPoller:
             self._mark_processed(client, doc_id, error="duplicate")
             return
 
-        result = self._chaos.resolve(channel)
+        result = self._chaos.resolve(channel, force=True)
         status = result.get("status", "unknown")
         resolved_channels.add(channel)
         logger.info(

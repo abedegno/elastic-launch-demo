@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from typing import TYPE_CHECKING
 
 from app.chaos.controller import ChaosController
 from app.chaos.remediation_poller import RemediationPoller
@@ -17,13 +18,16 @@ from app.dashboard.websocket import DashboardWebSocket
 from app.services.manager import ServiceManager
 from app.telemetry import OTLPClient
 
+if TYPE_CHECKING:
+    from app.store import ChaosStore
+
 logger = logging.getLogger("nova7.instance")
 
 
 class ScenarioInstance:
     """One running deployment: scenario + credentials + generators."""
 
-    def __init__(self, ctx: ScenarioContext):
+    def __init__(self, ctx: ScenarioContext, chaos_store: ChaosStore | None = None):
         self.ctx = ctx
         self.scenario_id = ctx.scenario_id
         self.deployment_id = ctx.scenario_id  # default; can be overridden
@@ -35,7 +39,11 @@ class ScenarioInstance:
         )
 
         # Per-instance chaos controller with this scenario's channel registry
-        self.chaos_controller = ChaosController(channel_registry=ctx.channel_registry)
+        self.chaos_controller = ChaosController(
+            channel_registry=ctx.channel_registry,
+            chaos_store=chaos_store,
+            deployment_id=self.deployment_id,
+        )
 
         # Per-instance dashboard WS (shared broadcast for all connected clients)
         self.dashboard_ws = DashboardWebSocket()

@@ -1,4 +1,4 @@
-// Chaos Controller UI (scenario-aware)
+// Chaos Controller UI (scenario-aware, session-based ownership)
 (function () {
     'use strict';
 
@@ -9,32 +9,43 @@
     const deployId = window.DEPLOYMENT_ID || '';
     const qs = deployId ? '?deployment_id=' + encodeURIComponent(deployId) : '';
 
-    // ── localStorage session isolation (namespace-scoped) ────
+    // ── Session-based ownership (namespace-scoped) ──────────
     const ns = window.SCENARIO_NAMESPACE || 'demo';
-    const LS_KEY = ns + '_my_channels';
+    const SESSION_KEY = ns + '_chaos_session_id';
+    let mySessionId = null;
+    let myOwnedChannels = new Set();
 
-    function getMyChannels() {
+    function getSessionId() {
+        if (mySessionId) return mySessionId;
         try {
-            return JSON.parse(localStorage.getItem(LS_KEY)) || [];
-        } catch { return []; }
+            mySessionId = localStorage.getItem(SESSION_KEY) || null;
+        } catch { /* ignore */ }
+        return mySessionId;
     }
 
-    function addMyChannel(ch) {
-        const chs = getMyChannels();
-        if (!chs.includes(ch)) {
-            chs.push(ch);
-            localStorage.setItem(LS_KEY, JSON.stringify(chs));
-        }
+    function generateSessionId() {
+        // crypto.randomUUID with fallback
+        const id = (crypto.randomUUID && crypto.randomUUID()) ||
+            'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                const r = Math.random() * 16 | 0;
+                return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+            });
+        mySessionId = id;
+        try { localStorage.setItem(SESSION_KEY, id); } catch { /* ignore */ }
+        return id;
     }
 
-    function removeMyChannel(ch) {
-        const chs = getMyChannels().filter(c => c !== ch);
-        localStorage.setItem(LS_KEY, JSON.stringify(chs));
+    function clearSession() {
+        mySessionId = null;
+        myOwnedChannels.clear();
+        try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+        updateSpikesLock();
     }
 
     // ── Initialize ────────────────────────────────────────────
     function init() {
         fetchChannels();
+        validateSession();
         setInterval(fetchStatus, 2000);
         // Auto-populate email from X-Forwarded-User header
         fetch('/api/user/info')
@@ -43,6 +54,28 @@
                 if (data.email) {
                     document.getElementById('user-email').value = data.email;
                 }
+            })
+            .catch(() => { /* ignore */ });
+    }
+
+    function validateSession() {
+        const sid = getSessionId();
+        if (!sid) {
+            myOwnedChannels.clear();
+            updateSpikesLock();
+            return;
+        }
+        const sep = qs ? '&' : '?';
+        fetch('/api/chaos/session/validate' + qs + sep + 'session_id=' + encodeURIComponent(sid))
+            .then(r => r.json())
+            .then(data => {
+                if (data.valid && data.channels && data.channels.length > 0) {
+                    myOwnedChannels = new Set(data.channels);
+                } else {
+                    // Session no longer owns anything — clear it
+                    clearSession();
+                }
+                updateSpikesLock();
             })
             .catch(() => { /* ignore */ });
     }
@@ -67,10 +100,21 @@
                 if (selectedChannel && data[selectedChannel]) {
                     updateChannelInfo(selectedChannel, data[selectedChannel]);
                 }
-                // Cleanup: remove channels from localStorage that are no longer ACTIVE
-                const mine = getMyChannels();
-                const stale = mine.filter(ch => !data[ch] || data[ch].state !== 'ACTIVE');
-                stale.forEach(ch => removeMyChannel(ch));
+                // Rebuild owned channels set from live data
+                const sid = getSessionId();
+                if (sid) {
+                    const newOwned = new Set();
+                    for (const [chId, ch] of Object.entries(data)) {
+                        if (ch.state === 'ACTIVE' && ch.session_id === sid) {
+                            newOwned.add(parseInt(chId));
+                        }
+                    }
+                    myOwnedChannels = newOwned;
+                    if (myOwnedChannels.size === 0) {
+                        clearSession();
+                    }
+                }
+                updateSpikesLock();
             })
             .catch(() => { /* ignore */ });
     }
@@ -134,8 +178,14 @@
 
         const btnInject = document.getElementById('btn-inject');
         const btnResolve = document.getElementById('btn-resolve');
+
+        // INJECT: always enabled for STANDBY channels
         btnInject.disabled = ch.state === 'ACTIVE';
-        btnResolve.disabled = ch.state !== 'ACTIVE';
+
+        // RESOLVE: only enabled if channel is ACTIVE and we own it
+        const sid = getSessionId();
+        const isMine = sid && ch.session_id === sid;
+        btnResolve.disabled = ch.state !== 'ACTIVE' || !isMine;
     }
 
     // ── Trigger / Resolve ─────────────────────────────────────
@@ -144,6 +194,9 @@
         const mode = document.querySelector('input[name="fault-mode"]:checked').value;
         const userEmail = document.getElementById('user-email').value.trim();
         const callbackUrl = window.location.origin;
+
+        // Generate session_id if we don't have one yet
+        const sid = getSessionId() || generateSessionId();
 
         fetch('/api/chaos/trigger', {
             method: 'POST',
@@ -154,12 +207,16 @@
                 se_name: channelData[selectedChannel]?.name || '',
                 callback_url: callbackUrl,
                 user_email: userEmail,
+                session_id: sid,
                 deployment_id: deployId || undefined,
             }),
         })
             .then(r => r.json())
             .then(result => {
-                if (result.status === 'triggered') addMyChannel(selectedChannel);
+                if (result.status === 'triggered') {
+                    myOwnedChannels.add(selectedChannel);
+                    updateSpikesLock();
+                }
                 fetchStatus();
             })
             .catch(e => console.error('Trigger failed:', e));
@@ -167,15 +224,30 @@
 
     window.resolveFault = function () {
         if (!selectedChannel) return;
+        const sid = getSessionId();
 
         fetch('/api/chaos/resolve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel: selectedChannel, deployment_id: deployId || undefined }),
+            body: JSON.stringify({
+                channel: selectedChannel,
+                session_id: sid || '',
+                deployment_id: deployId || undefined,
+            }),
         })
-            .then(r => r.json())
+            .then(r => {
+                if (r.status === 403) {
+                    r.json().then(d => console.warn('Session mismatch:', d));
+                    return null;
+                }
+                return r.json();
+            })
             .then(result => {
-                if (result.status === 'resolved') removeMyChannel(selectedChannel);
+                if (!result) return;
+                if (result.status === 'resolved') {
+                    myOwnedChannels.delete(selectedChannel);
+                    if (myOwnedChannels.size === 0) clearSession();
+                }
                 fetchStatus();
                 refreshSpikes();
             })
@@ -183,14 +255,30 @@
     };
 
     window.resolveChannel = function (channel) {
+        const sid = getSessionId();
+
         fetch('/api/chaos/resolve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel: channel, deployment_id: deployId || undefined }),
+            body: JSON.stringify({
+                channel: channel,
+                session_id: sid || '',
+                deployment_id: deployId || undefined,
+            }),
         })
-            .then(r => r.json())
+            .then(r => {
+                if (r.status === 403) {
+                    r.json().then(d => console.warn('Session mismatch:', d));
+                    return null;
+                }
+                return r.json();
+            })
             .then(result => {
-                if (result.status === 'resolved') removeMyChannel(channel);
+                if (!result) return;
+                if (result.status === 'resolved') {
+                    myOwnedChannels.delete(channel);
+                    if (myOwnedChannels.size === 0) clearSession();
+                }
                 fetchStatus();
                 refreshSpikes();
             })
@@ -205,6 +293,8 @@
             .filter(id => data[id].state === 'ACTIVE')
             .sort((a, b) => a - b);
 
+        const sid = getSessionId();
+
         if (activeIds.length === 0) {
             container.innerHTML = '<div class="no-active">No active faults</div>';
         } else {
@@ -217,6 +307,13 @@
                 const remaining = Math.max(0, MAX_DURATION - elapsed);
                 const remMins = Math.floor(remaining / 60);
                 const remSecs = remaining % 60;
+                const isMine = sid && ch.session_id === sid;
+                const ownerTag = !isMine && ch.session_id
+                    ? '<div class="ac-owner-tag">CONTROLLED BY ANOTHER OPERATOR</div>'
+                    : '';
+                const resolveBtn = isMine
+                    ? `<button class="ac-resolve-btn" onclick="resolveChannel(${id})">RESOLVE</button>`
+                    : `<button class="ac-resolve-btn" disabled>RESOLVE</button>`;
                 return `
                     <div class="active-channel-card">
                         <div class="ac-header">
@@ -226,7 +323,8 @@
                         <div class="ac-name">${ch.name}</div>
                         <div class="ac-subsystem">${ch.subsystem} | ${(ch.affected_services || []).join(', ')}</div>
                         <div class="ac-expiry">Auto-expires in ${remMins}m ${remSecs}s</div>
-                        <button class="ac-resolve-btn" onclick="resolveChannel(${id})">RESOLVE</button>
+                        ${ownerTag}
+                        ${resolveBtn}
                     </div>
                 `;
             }).join('');
@@ -238,6 +336,16 @@
 
     // ── Infrastructure Spikes ─────────────────────────────────
     let spikeDebounceTimer = null;
+
+    function updateSpikesLock() {
+        const panel = document.querySelector('.spikes-panel');
+        if (!panel) return;
+        if (myOwnedChannels.size === 0) {
+            panel.classList.add('locked');
+        } else {
+            panel.classList.remove('locked');
+        }
+    }
 
     function initSpikes() {
         // Load current spike state
@@ -256,6 +364,8 @@
         wireSlider('spike-memory', 'spike-memory-value', formatPct);
         wireSlider('spike-oom', 'spike-oom-value', formatPct);
         wireSlider('spike-latency', 'spike-latency-value', formatMult);
+
+        updateSpikesLock();
     }
 
     function refreshSpikes() {
@@ -305,6 +415,7 @@
     }
 
     function sendSpikes() {
+        if (myOwnedChannels.size === 0) return; // locked — no active session
         const cpu = parseFloat(document.getElementById('spike-cpu').value);
         const mem = parseFloat(document.getElementById('spike-memory').value);
         const oom = parseFloat(document.getElementById('spike-oom').value);
@@ -318,6 +429,7 @@
                 memory_pct: mem,
                 k8s_oom_intensity: oom,
                 latency_multiplier: lat,
+                session_id: getSessionId() || '',
                 deployment_id: deployId || undefined,
             }),
         })
