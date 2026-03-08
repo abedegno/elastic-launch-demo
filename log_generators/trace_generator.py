@@ -22,6 +22,38 @@ from app.telemetry import OTLPClient, _format_attributes, SCHEMA_URL
 from app.config import SERVICES, CHANNEL_REGISTRY, ACTIVE_SCENARIO, NAMESPACE
 from app.trace_context import _trace_context_store
 
+# Generic exceptions by language for baseline error spans (no active chaos channel)
+_GENERIC_EXCEPTIONS = {
+    "python": [
+        ("RuntimeError", "internal server error"),
+        ("TimeoutError", "upstream request timed out"),
+        ("ConnectionError", "connection refused"),
+    ],
+    "java": [
+        ("java.lang.RuntimeException", "internal server error"),
+        ("java.net.SocketTimeoutException", "connect timed out"),
+        ("java.sql.SQLException", "connection pool exhausted"),
+    ],
+    "go": [
+        ("runtime.Error", "internal server error"),
+        ("net.OpError", "dial tcp: connection refused"),
+        ("context.DeadlineExceeded", "context deadline exceeded"),
+    ],
+    "dotnet": [
+        ("System.Exception", "internal server error"),
+        ("System.TimeoutException", "operation has timed out"),
+        ("System.Net.Sockets.SocketException", "connection refused"),
+    ],
+    "rust": [
+        ("std::io::Error", "connection refused"),
+        ("anyhow::Error", "internal server error"),
+    ],
+    "cpp": [
+        ("std::runtime_error", "internal server error"),
+        ("std::system_error", "connection refused"),
+    ],
+}
+
 logger = logging.getLogger("trace-generator")
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -124,6 +156,45 @@ def _build_resource(service_name: str, services: dict | None = None, namespace: 
     }
 
 
+def _build_exception_event(
+    client: OTLPClient,
+    service_name: str,
+    services: dict,
+    rng: random.Random,
+    channel_registry: dict | None = None,
+    active_channels: list[int] | None = None,
+    scenario=None,
+) -> list[dict] | None:
+    """Build exception event(s) for an error span.
+
+    If the service is affected by an active chaos channel, uses the channel's
+    error_type/error_message/stack_trace. Otherwise uses a generic exception
+    for the service's language.
+    """
+    # Check if this service is affected by any active channel
+    if active_channels and channel_registry and scenario:
+        for ch_id in active_channels:
+            ch = channel_registry.get(ch_id, {})
+            if service_name in ch.get("affected_services", []):
+                fault_params = scenario.get_fault_params(ch_id)
+                error_type = ch.get("error_type", "Error")
+                # Format error message and stack trace with fault params
+                import string
+                class SafeDict(dict):
+                    def __missing__(self, key):
+                        return f"{{{key}}}"
+                fmt = string.Formatter()
+                message = fmt.vformat(ch.get("error_message", "error"), (), SafeDict(fault_params))
+                stacktrace = fmt.vformat(ch.get("stack_trace", ""), (), SafeDict(fault_params))
+                return [client.build_exception_event(error_type, message, stacktrace)]
+
+    # Generic exception for baseline errors
+    language = services.get(service_name, {}).get("language", "python")
+    exceptions = _GENERIC_EXCEPTIONS.get(language, _GENERIC_EXCEPTIONS["python"])
+    exc_type, exc_msg = rng.choice(exceptions)
+    return [client.build_exception_event(exc_type, exc_msg)]
+
+
 def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                     chaos_affected: set[str] | None = None,
                     *, services: dict | None = None, namespace: str | None = None,
@@ -222,6 +293,16 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
     }
     root_attrs.update(_extra_attrs(entry_service, root_status == STATUS_ERROR))
 
+    # Build exception events for error spans
+    root_events = None
+    if root_status == STATUS_ERROR:
+        root_events = _build_exception_event(
+            client, entry_service, _services, rng,
+            channel_registry=channel_registry,
+            active_channels=active_channels,
+            scenario=_scenario,
+        )
+
     root_span = client.build_span(
         name=f"{entry_method} {entry_endpoint}",
         trace_id=trace_id,
@@ -230,6 +311,7 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
         duration_ms=total_duration,
         status_code=root_status,
         attributes=root_attrs,
+        events=root_events,
     )
     spans_by_service.setdefault(entry_service, []).append(root_span)
 
@@ -311,6 +393,16 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                 "server.port": 8080,
             }
             callee_attrs.update(_extra_attrs(callee_service, is_this_error))
+
+            callee_events = None
+            if call_status == STATUS_ERROR:
+                callee_events = _build_exception_event(
+                    client, callee_service, _services, rng,
+                    channel_registry=channel_registry,
+                    active_channels=active_channels,
+                    scenario=_scenario,
+                )
+
             server_span = client.build_span(
                 name=f"{callee_method} {callee_endpoint}",
                 trace_id=trace_id,
@@ -320,6 +412,7 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                 duration_ms=max(1, server_duration),
                 status_code=call_status,
                 attributes=callee_attrs,
+                events=callee_events,
             )
             spans_by_service.setdefault(callee_service, []).append(server_span)
 
