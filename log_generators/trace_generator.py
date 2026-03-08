@@ -400,7 +400,7 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                     client, callee_service, _services, rng,
                     channel_registry=channel_registry,
                     active_channels=active_channels,
-                    scenario=_scenario,
+                    scenario=scenario,
                 )
 
             server_span = client.build_span(
