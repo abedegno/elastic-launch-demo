@@ -1017,6 +1017,9 @@ class TelecomScenario(BaseScenario):
             "bss-billing": [
                 ("subscriber-db", "/api/v1/db/subscribers/update", "POST"),
             ],
+            "notification-service": [
+                ("subscriber-db", "/api/v1/db/notifications/insert", "POST"),
+            ],
         }
 
     @property
@@ -1157,7 +1160,7 @@ class TelecomScenario(BaseScenario):
                 "region": "eu-central-1",
                 "zones": ["eu-central-1a", "eu-central-1b", "eu-central-1c"],
                 "os_description": "Amazon Linux 2",
-                "services": ["api-gateway", "activation-service", "subscriber-db"],
+                "services": ["api-gateway", "activation-service"],
             },
             {
                 "name": "meridian-gke-cluster",
@@ -1175,7 +1178,7 @@ class TelecomScenario(BaseScenario):
                 "region": "westeurope",
                 "zones": ["westeurope-1", "westeurope-2", "westeurope-3"],
                 "os_description": "Ubuntu 22.04 LTS",
-                "services": ["auth-service", "bss-billing", "identity-db"],
+                "services": ["auth-service", "bss-billing"],
             },
         ]
 
@@ -1265,24 +1268,23 @@ class TelecomScenario(BaseScenario):
     def get_service_classes(self) -> list[type]:
         from scenarios.telecom.services.api_gateway import ApiGatewayService
         from scenarios.telecom.services.activation_service import ActivationServiceService
-        from scenarios.telecom.services.subscriber_db import SubscriberDbService
         from scenarios.telecom.services.provisioning_service import ProvisioningServiceService
         from scenarios.telecom.services.network_core import NetworkCoreService
         from scenarios.telecom.services.notification_service import NotificationServiceService
         from scenarios.telecom.services.auth_service import AuthServiceService
         from scenarios.telecom.services.bss_billing import BssBillingService
-        from scenarios.telecom.services.identity_db import IdentityDbService
 
+        # Database services (subscriber-db, identity-db) are excluded — they
+        # appear only as DB dependencies on the Service Map.  Their fault logs
+        # are emitted by the calling services (provisioning-service, auth-service).
         return [
             ApiGatewayService,
             ActivationServiceService,
-            SubscriberDbService,
             ProvisioningServiceService,
             NetworkCoreService,
             NotificationServiceService,
             AuthServiceService,
             BssBillingService,
-            IdentityDbService,
         ]
 
     # ── Trace Attributes & RCA ───────────────────────────────────────

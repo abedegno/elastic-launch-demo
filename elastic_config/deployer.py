@@ -593,6 +593,139 @@ class ScenarioDeployer:
 
     # ── APM Rollup Data ────────────────────────────────────────────────
 
+    def _build_db_pipeline_name(self) -> str:
+        return f"{self.scenario.scenario_id}-db-dependency-names"
+
+    def _deploy_db_ingest_pipeline(self, client: httpx.Client):
+        """Create an ingest pipeline that rewrites generic DB resource names.
+
+        EDOT sets span.destination.service.resource = db.system ("postgresql")
+        for all DB CLIENT spans, merging all databases into one Service Map node.
+        This pipeline rewrites the resource based on server.address (traces) or
+        service.target.name (SD metrics) to split into per-database nodes.
+        """
+        headers = _es_headers(self.api_key)
+        services = self.scenario.services
+        topology = self.scenario.service_topology
+        namespace = self.scenario.namespace
+
+        # Find database services and their topology connections
+        db_services = {
+            name for name, cfg in services.items()
+            if cfg.get("subsystem") == "database"
+        }
+        if not db_services:
+            logger.info("No database services in scenario — skipping ingest pipeline")
+            return
+
+        # Build rewrites: server.address → db_service_name
+        # and service.target.name → db_service_name
+        addr_rewrites: dict[str, str] = {}  # host → db_service
+        target_rewrites: dict[str, str] = {}  # target_name → db_service
+        for caller, calls in topology.items():
+            if caller in db_services:
+                continue
+            for callee, _ep, _method in calls:
+                if callee in db_services:
+                    addr_rewrites[f"{callee}-host"] = callee
+                    # Map all tables this caller accesses to the DB service
+                    for op, table, stmt in self.scenario.db_operations.get(caller, []):
+                        target_rewrites[f"{namespace}_{table}"] = callee
+
+        if not addr_rewrites:
+            logger.info("No DB topology edges — skipping ingest pipeline")
+            return
+
+        # Build Painless script for conditional rewrites
+        conditions = []
+        # server.address rewrites (for trace spans)
+        for addr, db_name in addr_rewrites.items():
+            conditions.append(
+                f"if (attrs.containsKey('server.address') && "
+                f"attrs.get('server.address') == '{addr}') {{ "
+                f"attrs.put('span.destination.service.resource', '{db_name}'); return; }}"
+            )
+        # service.target.name rewrites (for SD metric docs)
+        for target, db_name in target_rewrites.items():
+            conditions.append(
+                f"if (attrs.containsKey('service.target.name') && "
+                f"attrs.get('service.target.name') == '{target}') {{ "
+                f"attrs.put('span.destination.service.resource', '{db_name}'); return; }}"
+            )
+
+        script_source = (
+            "def attrs = ctx.attributes; "
+            "if (attrs == null) return; "
+            "if (!attrs.containsKey('span.destination.service.resource')) return; "
+            "def res = attrs.get('span.destination.service.resource'); "
+            "if (res != 'postgresql' && res != 'mysql') return; "
+            + " ".join(conditions)
+        )
+
+        pipeline_name = self._build_db_pipeline_name()
+        pipeline_body = {
+            "description": f"Split generic DB resource into per-database Service Map nodes ({self.scenario.scenario_id})",
+            "processors": [{
+                "script": {
+                    "lang": "painless",
+                    "source": script_source,
+                }
+            }],
+        }
+
+        try:
+            r = client.put(
+                f"{self.elastic_url}/_ingest/pipeline/{pipeline_name}",
+                headers=headers,
+                json=pipeline_body,
+            )
+            if r.status_code < 300:
+                logger.info("Created ingest pipeline %s", pipeline_name)
+            else:
+                logger.warning("Failed to create pipeline %s: %s %s", pipeline_name, r.status_code, r.text[:200])
+                return
+        except Exception as exc:
+            logger.warning("Ingest pipeline error (non-fatal): %s", exc)
+            return
+
+        # Attach pipeline to traces@custom
+        try:
+            client.put(
+                f"{self.elastic_url}/_component_template/traces@custom",
+                headers=headers,
+                json={"template": {"settings": {"index.default_pipeline": pipeline_name}}},
+            )
+            logger.info("Attached pipeline to traces@custom")
+        except Exception as exc:
+            logger.warning("traces@custom error (non-fatal): %s", exc)
+
+    def _set_metrics_look_back_time(self, client: httpx.Client):
+        """Set metrics@custom look_back_time + DB pipeline so TSDB accepts historical data."""
+        headers = _es_headers(self.api_key)
+        pipeline_name = self._build_db_pipeline_name()
+        settings: dict = {"index.look_back_time": "7d"}
+
+        # Check if pipeline exists — if so, attach it to metrics too
+        try:
+            r = client.get(f"{self.elastic_url}/_ingest/pipeline/{pipeline_name}", headers=headers)
+            if r.status_code == 200:
+                settings["index.default_pipeline"] = pipeline_name
+        except Exception:
+            pass
+
+        try:
+            r = client.put(
+                f"{self.elastic_url}/_component_template/metrics@custom",
+                headers=headers,
+                json={"template": {"settings": settings}},
+            )
+            if r.status_code < 300:
+                logger.info("Set metrics@custom: %s", settings)
+            else:
+                logger.warning("Failed to set metrics@custom: %s %s", r.status_code, r.text[:200])
+        except Exception as exc:
+            logger.warning("metrics@custom override error (non-fatal): %s", exc)
+
     def _deploy_apm_rollup(self, client: httpx.Client, notify: ProgressCallback):
         """Generate synthetic APM rollup data for Service Map and ML."""
         step = self._step(4)
@@ -600,6 +733,37 @@ class ScenarioDeployer:
         notify(self.progress)
 
         try:
+            # Create ingest pipeline for DB dependency name rewriting
+            self._deploy_db_ingest_pipeline(client)
+
+            # Extend TSDB look_back_time (+ attach pipeline to metrics)
+            self._set_metrics_look_back_time(client)
+
+            # Delete existing rollup data streams (all intervals) for clean state
+            for ds_pattern in [
+                "metrics-transaction.1m.otel-*",
+                "metrics-service_destination.1m.otel-*",
+                "metrics-service_summary.1m.otel-*",
+                "metrics-service_destination.10m.otel-*",
+                "metrics-service_destination.60m.otel-*",
+            ]:
+                try:
+                    r = client.get(
+                        f"{self.elastic_url}/_data_stream/{ds_pattern}",
+                        headers=_es_headers(self.api_key),
+                    )
+                    if r.status_code < 300:
+                        for ds in r.json().get("data_streams", []):
+                            name = ds.get("name", "")
+                            if name:
+                                client.delete(
+                                    f"{self.elastic_url}/_data_stream/{name}",
+                                    headers=_es_headers(self.api_key),
+                                )
+                                logger.info("Deleted stale rollup data stream %s", name)
+                except Exception:
+                    pass
+
             from elastic_config.apm_rollup import ApmRollupGenerator
 
             gen = ApmRollupGenerator(
@@ -1392,13 +1556,15 @@ When the user asks you to fix or remediate this issue, use remediation_action to
         # Clean existing queries (streams already enabled in _configure_platform_settings)
         self._cleanup_significant_events(client)
 
-        # Build bulk operations
+        # Build bulk operations (ES|QL format required by Kibana 9.x streams API)
         operations = []
         registry = self.scenario.channel_registry
         for ch_num, ch_data in sorted(registry.items()):
             num_str = f"{int(ch_num):02d}"
             error_type = ch_data["error_type"]
-            esql_query = f'FROM logs.otel,logs.otel.* METADATA _id, _source | WHERE body.text LIKE "*{error_type}*" AND severity_text == "ERROR"'
+            # Escape double quotes in error_type for ES|QL string literals
+            escaped = error_type.replace('"', '\\"')
+            esql_query = f'FROM logs.otel,logs.otel.* METADATA _id, _source | WHERE body.text LIKE "*{escaped}*" AND severity_text == "ERROR"'
             operations.append({
                 "index": {
                     "id": f"{self.ns}-se-ch{num_str}",
@@ -1419,8 +1585,9 @@ When the user asks you to fix or remediate this issue, use remediation_action to
                 step.items_done = len(operations)
                 step.detail = f"Created {len(operations)} stream queries"
             else:
-                logger.warning("Significant events bulk create failed: %s", resp.text[:500])
-                step.detail = f"Bulk create failed (HTTP {resp.status_code})"
+                body = resp.text[:200] if resp.text else ""
+                step.detail = f"Bulk create failed (HTTP {resp.status_code}): {body}"
+                logger.error("Significant events bulk create failed: %s %s", resp.status_code, body)
 
         step.status = "ok" if step.items_done > 0 else "failed"
         notify(self.progress)
@@ -1855,6 +2022,7 @@ When the user asks you to fix or remediate this issue, use remediation_action to
         for ds_pattern in [
             "metrics-*.otel-*",
             "traces-*.otel-*",
+            "logs-*.otel-*",
         ]:
             try:
                 resp = client.get(
@@ -2022,12 +2190,16 @@ When the user asks you to fix or remediate this issue, use remediation_action to
             if resp.status_code < 300:
                 data = resp.json()
                 queries = data if isinstance(data, list) else data.get("queries", [])
-                for q in queries:
-                    qid = q.get("id", "")
-                    if qid.startswith(f"{self.ns}-se-"):
-                        client.delete(
-                            f"{self.kibana_url}/api/streams/logs.otel/queries/{qid}",
-                            headers=_kibana_headers(self.api_key),
-                        )
+                delete_ops = [
+                    {"delete": {"id": q["id"]}}
+                    for q in queries
+                    if q.get("id", "").startswith(f"{self.ns}-se-")
+                ]
+                if delete_ops:
+                    client.post(
+                        f"{self.kibana_url}/api/streams/logs.otel/queries/_bulk",
+                        headers=_kibana_headers(self.api_key),
+                        json={"operations": delete_ops},
+                    )
         except Exception:
             pass

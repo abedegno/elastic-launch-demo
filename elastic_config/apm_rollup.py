@@ -171,11 +171,17 @@ class ApmRollupGenerator:
         topology = self.scenario.service_topology
         db_ops = self.scenario.db_operations
 
-        # HTTP edges from topology
+        # HTTP edges from topology (skip database callees — handled by db_operations)
+        db_services = {
+            name for name, cfg in self._services.items()
+            if cfg.get("subsystem") == "database"
+        }
         for caller, calls in topology.items():
             if caller not in self._instrumented:
                 continue
             for callee, endpoint, method in calls:
+                if callee in db_services:
+                    continue  # DB deps come from db_operations below
                 resource = f"{callee}-host:8080"
                 span_name = f"{method} {endpoint}"
                 edges.append(SdEdge(
@@ -187,15 +193,26 @@ class ApmRollupGenerator:
                     baseline_us=0,  # filled in later
                 ))
 
-        # DB edges from db_operations
+        # Build map: app_service → database_service from topology
+        svc_to_db: dict[str, str] = {}
+        for caller, calls in topology.items():
+            if caller in db_services:
+                continue
+            for callee, _ep, _method in calls:
+                if callee in db_services:
+                    svc_to_db[caller] = callee
+
+        # DB edges from db_operations — use DB service name as resource
         for svc, ops in db_ops.items():
             if svc not in self._instrumented:
                 continue
+            db_svc = svc_to_db.get(svc)
             seen_resources: set[str] = set()
             for op, table, statement in ops:
-                resource = f"{self._namespace}_{table}"
+                # Resource = DB service name (matches ingest pipeline rewrite)
+                # Falls back to {namespace}_{table} if no DB service in topology
+                resource = db_svc if db_svc else f"{self._namespace}_{table}"
                 span_name = f"{op} {table}"
-                # Avoid duplicate edges for same resource
                 edge_key = f"{svc}:{resource}:{span_name}"
                 if edge_key in seen_resources:
                     continue
