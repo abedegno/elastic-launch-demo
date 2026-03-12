@@ -164,6 +164,22 @@ class TelecomScenario(BaseScenario):
                     "ACTION: cancel_maintenance=true  kill_long_queries=true  alert=DB-CONNPOOL-EXHAUST"
                 ),
                 "infra_impact": {"cpu_pct": 95, "memory_pct": 80, "latency_multiplier": 3.0},
+                "infrastructure_events": [
+                    {
+                        "body": "[CloudWatch] RDS ConnectionPoolExhausted: instance=subscriber-db pool_active=100/100 wait_queue=350 avg_wait_ms=4200 alarm=ALARM region=eu-central-1",
+                        "severity": "ERROR",
+                        "event_name": "aws.cloudwatch.alarm.ConnectionPoolExhausted",
+                        "service": "subscriber-db",
+                        "attributes": {
+                            "cloud.provider": "aws",
+                            "cloud.service": "cloudwatch",
+                            "aws.cloudwatch.alarm_name": "subscriber-db-pool-exhaustion",
+                            "aws.cloudwatch.state": "ALARM",
+                            "aws.rds.instance": "subscriber-db",
+                            "infrastructure.source": "CloudWatch",
+                        },
+                    },
+                ],
             },
             2: {
                 "name": "RDS Automated Maintenance Spike",
@@ -262,6 +278,21 @@ class TelecomScenario(BaseScenario):
                     "  reauth_storm_risk=HIGH  read_routing=ROUND_ROBIN\n"
                     "ACTION: route_reads_primary=true  scale_replica=true  alert=DB-REPLICATION-LAG"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[AzureHealth] ReplicationLagExceeded: resource=identity-db-replica lag_ms=15000 threshold_ms=5000 region=westeurope cause=IOPS_SATURATION",
+                        "severity": "WARN",
+                        "event_name": "azure.health.ReplicationLagExceeded",
+                        "service": "identity-db",
+                        "attributes": {
+                            "cloud.provider": "azure",
+                            "cloud.service": "postgresql",
+                            "azure.health.status": "Degraded",
+                            "azure.health.cause": "IOPS_SATURATION",
+                            "infrastructure.source": "AzureHealth",
+                        },
+                    },
+                ],
             },
             4: {
                 "name": "5G Bearer Allocation Timeout",
@@ -305,6 +336,20 @@ class TelecomScenario(BaseScenario):
                     "ACTION: enable_ca=true  redistribute_load=true  alert=NET-BEARER-TIMEOUT"
                 ),
                 "infra_impact": {"cpu_pct": 85, "latency_multiplier": 2.0},
+                "infrastructure_events": [
+                    {
+                        "body": "[GCP-Monitoring] BearerAllocationTimeout: cluster=network-core-gke pod=bearer-allocator-7f9a latency_p99=12000ms threshold=5000ms region=europe-west3",
+                        "severity": "WARN",
+                        "event_name": "gcp.monitoring.BearerAllocationTimeout",
+                        "service": "network-core",
+                        "attributes": {
+                            "cloud.provider": "gcp",
+                            "cloud.service": "monitoring",
+                            "gcp.resource_type": "gke_container",
+                            "infrastructure.source": "GCP-Monitoring",
+                        },
+                    },
+                ],
             },
             5: {
                 "name": "S1-MME Interface Congestion",
@@ -344,6 +389,20 @@ class TelecomScenario(BaseScenario):
                     "  service_request_avg_ms=800  baseline=20ms\n"
                     "ACTION: overload_start=true  rebalance_pool=true  alert=NET-S1MME-CONGEST"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[GCP-Monitoring] SCTPAssociationDegraded: interface=S1-MME load_pct=95 nas_queue=500 region=europe-west3 cluster=network-core-gke",
+                        "severity": "WARN",
+                        "event_name": "gcp.monitoring.SCTPAssociationDegraded",
+                        "service": "network-core",
+                        "attributes": {
+                            "cloud.provider": "gcp",
+                            "cloud.service": "monitoring",
+                            "gcp.resource_type": "gke_container",
+                            "infrastructure.source": "GCP-Monitoring",
+                        },
+                    },
+                ],
             },
             6: {
                 "name": "GTP Tunnel Setup Failure",
@@ -384,6 +443,20 @@ class TelecomScenario(BaseScenario):
                     "  gtp_echo_status=OK  path_failure=false\n"
                     "ACTION: clear_stale_tunnels=true  scale_pgw=true  alert=NET-GTP-TUNNEL-FAIL"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[GCP-Monitoring] GTPTunnelSetupFailure: tunnel_type=GTPv2-C failure_rate=35% cause=RESOURCE_UNAVAILABLE pgw=network-core-pgw region=europe-west3",
+                        "severity": "ERROR",
+                        "event_name": "gcp.monitoring.GTPTunnelSetupFailure",
+                        "service": "network-core",
+                        "attributes": {
+                            "cloud.provider": "gcp",
+                            "cloud.service": "monitoring",
+                            "gcp.resource_type": "gke_container",
+                            "infrastructure.source": "GCP-Monitoring",
+                        },
+                    },
+                ],
             },
             7: {
                 "name": "OAuth Token Validation Failure",
@@ -425,6 +498,20 @@ class TelecomScenario(BaseScenario):
                     "  affected_requests={auth_affected_requests}  reject_rate=100%\n"
                     "ACTION: force_jwks_refresh=true  clear_token_cache=true  alert=AUTH-TOKEN-INVALID"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[AzureHealth] TokenValidationDegraded: resource=auth-service error_rate=45% jwks_cache=STALE provider=AzureAD region=westeurope",
+                        "severity": "WARN",
+                        "event_name": "azure.health.TokenValidationDegraded",
+                        "service": "auth-service",
+                        "attributes": {
+                            "cloud.provider": "azure",
+                            "cloud.service": "active_directory",
+                            "azure.health.status": "Degraded",
+                            "infrastructure.source": "AzureHealth",
+                        },
+                    },
+                ],
             },
             8: {
                 "name": "AD Federation Timeout",
@@ -523,6 +610,21 @@ class TelecomScenario(BaseScenario):
                     "  activation-service: blocked on auth, queue building\n"
                     "ACTION: increase_maxmemory=true  flush_expired=true  alert=AUTH-SESSION-SATURATE"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[AzureHealth] RedisCacheMemorySaturation: resource=meridian-session-cache memory_used_pct=98 eviction_policy=volatile-lru evictions_per_sec=450 region=westeurope",
+                        "severity": "ERROR",
+                        "event_name": "azure.health.RedisCacheMemorySaturation",
+                        "service": "auth-service",
+                        "attributes": {
+                            "cloud.provider": "azure",
+                            "cloud.service": "redis_cache",
+                            "azure.health.status": "Critical",
+                            "azure.health.cause": "MEMORY_SATURATION",
+                            "infrastructure.source": "AzureHealth",
+                        },
+                    },
+                ],
             },
             10: {
                 "name": "SIM Profile Provisioning Stall",
@@ -564,6 +666,20 @@ class TelecomScenario(BaseScenario):
                     "  esim_affected=true  physical_sim_affected=true\n"
                     "ACTION: scale_hlr_workers=true  drain_queue=true  alert=PROV-SIM-STALL"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[GCP-Monitoring] HLRProvisioningStall: queue_depth=5000 processing_rate=0/min hlr_connection=TIMEOUT target=subscriber-db region=europe-west3",
+                        "severity": "ERROR",
+                        "event_name": "gcp.monitoring.HLRProvisioningStall",
+                        "service": "provisioning-service",
+                        "attributes": {
+                            "cloud.provider": "gcp",
+                            "cloud.service": "monitoring",
+                            "gcp.resource_type": "gke_container",
+                            "infrastructure.source": "GCP-Monitoring",
+                        },
+                    },
+                ],
             },
             11: {
                 "name": "Number Portability Lookup Timeout",
@@ -603,6 +719,20 @@ class TelecomScenario(BaseScenario):
                     "  ported_activations_affected=15%  new_msisdn_unaffected=true\n"
                     "ACTION: enable_cache_fallback=true  contact_crdb_ops=true  alert=PROV-NP-TIMEOUT"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[GCP-Monitoring] NumberPortabilityTimeout: npdb_endpoint=npdb.meridian.eu response_time_ms=12000 threshold_ms=3000 region=europe-west3",
+                        "severity": "WARN",
+                        "event_name": "gcp.monitoring.NumberPortabilityTimeout",
+                        "service": "provisioning-service",
+                        "attributes": {
+                            "cloud.provider": "gcp",
+                            "cloud.service": "monitoring",
+                            "gcp.resource_type": "gke_container",
+                            "infrastructure.source": "GCP-Monitoring",
+                        },
+                    },
+                ],
             },
             12: {
                 "name": "Tariff Plan Mismatch",
@@ -645,6 +775,19 @@ class TelecomScenario(BaseScenario):
                     "  affected_tiers=[5G Max, eSIM Premium]  last_tariff_deploy=2026-03-05\n"
                     "ACTION: hotfix_mapping=true  reconcile_orphans=true  alert=PROV-TARIFF-MISMATCH"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[CloudWatch] TariffPlanSyncFailure: source=provisioning-service target=bss-billing mismatch_count=150 last_sync=45min_ago region=eu-central-1",
+                        "severity": "WARN",
+                        "event_name": "aws.cloudwatch.alarm.TariffPlanSyncFailure",
+                        "service": "bss-billing",
+                        "attributes": {
+                            "cloud.provider": "azure",
+                            "cloud.service": "monitoring",
+                            "infrastructure.source": "AzureMonitor",
+                        },
+                    },
+                ],
             },
             13: {
                 "name": "CDR Processing Backlog",
@@ -685,6 +828,20 @@ class TelecomScenario(BaseScenario):
                     "  enterprise_reporting=DELAYED  mvno_wholesale=DELAYED\n"
                     "ACTION: scale_rating_workers=true  notify_enterprise=true  alert=BSS-CDR-BACKLOG"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[AzureMonitor] CDRProcessingBacklog: queue_depth=50000 processing_rate=200/min normal_rate=5000/min mediation_pipeline=STALLED region=westeurope",
+                        "severity": "ERROR",
+                        "event_name": "azure.monitor.CDRProcessingBacklog",
+                        "service": "bss-billing",
+                        "attributes": {
+                            "cloud.provider": "azure",
+                            "cloud.service": "monitor",
+                            "azure.health.status": "Critical",
+                            "infrastructure.source": "AzureMonitor",
+                        },
+                    },
+                ],
             },
             14: {
                 "name": "Billing Mediation Failure",
@@ -724,6 +881,20 @@ class TelecomScenario(BaseScenario):
                     "  billing_validation=DEGRADED  new_activations=DELAYED\n"
                     "ACTION: failover_partition=true  replay_from_checkpoint=true  alert=BSS-MEDIATION-FAIL"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[AzureMonitor] BillingMediationFailure: pipeline=cdr-mediation stage=rating error_rate=40% revenue_impact=EUR_45000/hr region=westeurope",
+                        "severity": "ERROR",
+                        "event_name": "azure.monitor.BillingMediationFailure",
+                        "service": "bss-billing",
+                        "attributes": {
+                            "cloud.provider": "azure",
+                            "cloud.service": "monitor",
+                            "azure.health.status": "Critical",
+                            "infrastructure.source": "AzureMonitor",
+                        },
+                    },
+                ],
             },
             15: {
                 "name": "Enterprise SLA Breach Alert",
@@ -765,6 +936,20 @@ class TelecomScenario(BaseScenario):
                     "  rca_due_date=48h_from_breach  notifications_sent={notifications_sent}\n"
                     "ACTION: escalate_enterprise=true  calculate_credits=true  alert=BSS-SLA-BREACH"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[AzureMonitor] EnterpriseSLABreach: customer_segment=Enterprise activation_success_rate=89.2% sla_threshold=99.5% penalty_risk=EUR_250000 region=westeurope",
+                        "severity": "ERROR",
+                        "event_name": "azure.monitor.EnterpriseSLABreach",
+                        "service": "bss-billing",
+                        "attributes": {
+                            "cloud.provider": "azure",
+                            "cloud.service": "monitor",
+                            "azure.health.status": "Critical",
+                            "infrastructure.source": "AzureMonitor",
+                        },
+                    },
+                ],
             },
             16: {
                 "name": "API Rate Limit Cascade",
@@ -804,6 +989,21 @@ class TelecomScenario(BaseScenario):
                     "  retry_after_honored=23%  aggressive_retry=77%\n"
                     "ACTION: adaptive_rate_limit=true  add_retry_after=true  alert=GW-RATE-LIMIT-CASCADE"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[CloudWatch] APIGatewayRateLimitExceeded: stage=production endpoint=/api/v1/* throttled_requests=2500 rate_limit=1000/min burst=50 region=eu-central-1",
+                        "severity": "WARN",
+                        "event_name": "aws.cloudwatch.alarm.APIGatewayRateLimitExceeded",
+                        "service": "api-gateway",
+                        "attributes": {
+                            "cloud.provider": "aws",
+                            "cloud.service": "apigateway",
+                            "aws.cloudwatch.alarm_name": "api-gateway-rate-limit",
+                            "aws.cloudwatch.state": "ALARM",
+                            "infrastructure.source": "CloudWatch",
+                        },
+                    },
+                ],
             },
             17: {
                 "name": "mTLS Certificate Expiry",
@@ -905,6 +1105,20 @@ class TelecomScenario(BaseScenario):
                     "  otp_delivery=BLOCKED  auth_impact=HIGH\n"
                     "ACTION: reconnect_smpp=true  enable_fallback=true  alert=NOTIF-SMS-FAIL"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[GCP-Monitoring] SMPPConnectionLost: aggregator=twilio-smpp bind_state=UNBOUND last_bind=45s_ago error=CONNECTION_REFUSED region=europe-west3",
+                        "severity": "ERROR",
+                        "event_name": "gcp.monitoring.SMPPConnectionLost",
+                        "service": "notification-service",
+                        "attributes": {
+                            "cloud.provider": "gcp",
+                            "cloud.service": "monitoring",
+                            "gcp.resource_type": "gke_container",
+                            "infrastructure.source": "GCP-Monitoring",
+                        },
+                    },
+                ],
             },
             19: {
                 "name": "Push Notification Backpressure",
@@ -943,6 +1157,20 @@ class TelecomScenario(BaseScenario):
                     "  priority_10_queued={priority_high_queued}  priority_5_queued={priority_low_queued}\n"
                     "ACTION: prioritize_activation=true  defer_marketing=true  alert=NOTIF-PUSH-BACKPRESSURE"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[GCP-Monitoring] PushNotificationThrottled: platform=FCM rate=800/min limit=500/min queue_depth=3500 429_responses=350 region=europe-west3",
+                        "severity": "WARN",
+                        "event_name": "gcp.monitoring.PushNotificationThrottled",
+                        "service": "notification-service",
+                        "attributes": {
+                            "cloud.provider": "gcp",
+                            "cloud.service": "monitoring",
+                            "gcp.resource_type": "gke_container",
+                            "infrastructure.source": "GCP-Monitoring",
+                        },
+                    },
+                ],
             },
             20: {
                 "name": "MVNO Webhook Timeout",
@@ -986,6 +1214,21 @@ class TelecomScenario(BaseScenario):
                     "  partner_sla_breach_risk=HIGH\n"
                     "ACTION: circuit_breaker=true  queue_for_reconciliation=true  alert=NOTIF-MVNO-WEBHOOK-TIMEOUT"
                 ),
+                "infrastructure_events": [
+                    {
+                        "body": "[CloudWatch] MVNOWebhookTimeout: partner=Lycamobile endpoint=api.lycamobile.eu/webhooks/activate timeout_ms=15000 sla_ms=5000 circuit_breaker=OPEN region=eu-central-1",
+                        "severity": "ERROR",
+                        "event_name": "aws.cloudwatch.alarm.MVNOWebhookTimeout",
+                        "service": "api-gateway",
+                        "attributes": {
+                            "cloud.provider": "aws",
+                            "cloud.service": "cloudwatch",
+                            "aws.cloudwatch.alarm_name": "mvno-webhook-health",
+                            "aws.cloudwatch.state": "ALARM",
+                            "infrastructure.source": "CloudWatch",
+                        },
+                    },
+                ],
             },
         }
 
