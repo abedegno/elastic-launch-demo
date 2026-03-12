@@ -195,6 +195,57 @@ def _build_exception_event(
     return [client.build_exception_event(exc_type, exc_msg)]
 
 
+def _get_db_chaos_info(
+    service_name: str,
+    channel_registry: dict | None,
+    active_channels: list[int] | None,
+) -> dict | None:
+    """Check if a service is affected by a database-subsystem chaos channel.
+
+    Returns the channel dict if active, else None.
+    Generic: uses channel_registry 'subsystem' field, not hardcoded channel IDs.
+    """
+    if not active_channels or not channel_registry:
+        return None
+    for ch_id in active_channels:
+        ch = channel_registry.get(ch_id, {})
+        if ch.get("subsystem") != "database":
+            continue
+        if service_name in ch.get("affected_services", []):
+            return ch
+    return None
+
+
+def _get_cascade_http_status(
+    service_name: str,
+    channel_registry: dict | None,
+    active_channels: list[int] | None,
+    rng: random.Random,
+) -> int:
+    """Return a role-appropriate HTTP error status for a service in an active chaos channel.
+
+    - affected_services → 504 (Gateway Timeout — waiting for resource)
+    - cascade_services (mid-tier) → 503 (Service Unavailable)
+    - cascade_services (last/edge) → 502 (Bad Gateway)
+    - No match → random from [500, 502, 503]
+    """
+    if not active_channels or not channel_registry:
+        return rng.choice([500, 502, 503])
+
+    for ch_id in active_channels:
+        ch = channel_registry.get(ch_id, {})
+        affected = ch.get("affected_services", [])
+        cascade = ch.get("cascade_services", [])
+
+        if service_name in affected:
+            return 504
+        if service_name in cascade:
+            idx = cascade.index(service_name)
+            return 502 if idx == len(cascade) - 1 else 503
+
+    return rng.choice([500, 502, 503])
+
+
 def _build_db_connection_map(
     services: dict, topology: dict, db_operations: dict, namespace: str,
 ) -> dict[str, dict]:
@@ -315,7 +366,7 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
     # Root SERVER span for the entry-point service
     root_span_id = _gen_span_id()
     root_status = STATUS_ERROR if (is_error_trace and error_service == entry_service) else STATUS_OK
-    root_http_status = rng.choice([500, 502, 503]) if root_status == STATUS_ERROR else 200
+    root_http_status = _get_cascade_http_status(entry_service, channel_registry, active_channels, rng) if root_status == STATUS_ERROR else 200
 
     # Helper: build extra scenario attrs for a span
     def _extra_attrs(svc: str, is_err: bool) -> dict:
@@ -371,7 +422,28 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
         op, table, statement = rng.choice(_db_ops[entry_service])
         db_info = _db_conn.get(entry_service, {}).get(table)
         db_span_id = _gen_span_id()
-        db_duration = rng.randint(2, min(30, total_duration // 3))
+
+        # Chaos-aware: DB spans dominate trace when DB subsystem is under fault
+        _db_chaos = _get_db_chaos_info(entry_service, channel_registry, active_channels)
+        if _db_chaos:
+            db_duration = rng.randint(int(total_duration * 0.6), max(int(total_duration * 0.6) + 1, int(total_duration * 0.9)))
+            db_status = STATUS_ERROR
+            _pool_active = rng.randint(95, 100)
+            _wait_queue = rng.randint(200, 500)
+            _wait_ms = rng.randint(3000, 5000)
+            db_events = [client.build_exception_event(
+                "org.postgresql.util.PSQLException",
+                f"Cannot acquire connection from pool: active={_pool_active}/100, waitQueue={_wait_queue}, timeout after {_wait_ms}ms",
+                "org.postgresql.util.PSQLException: Cannot acquire connection from pool\n"
+                "  at com.zaxxer.hikari.pool.HikariPool.createTimeoutException(HikariPool.java:696)\n"
+                "  at com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:197)\n"
+                "  at com.zaxxer.hikari.HikariDataSource.getConnection(HikariDataSource.java:100)",
+            )]
+        else:
+            db_duration = rng.randint(2, min(30, total_duration // 3))
+            db_status = STATUS_OK
+            db_events = None
+
         db_span = client.build_span(
             name=f"{op} {table}",
             trace_id=trace_id,
@@ -379,7 +451,7 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
             parent_span_id=root_span_id,
             kind=SPAN_KIND_CLIENT,
             duration_ms=db_duration,
-            status_code=STATUS_OK,
+            status_code=db_status,
             attributes={
                 "db.system": db_info["db_system"] if db_info else "postgresql",
                 "db.name": db_info["db_name"] if db_info else f"{_namespace}_telemetry",
@@ -389,6 +461,7 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                 "server.address": db_info["host"] if db_info else f"{_namespace}-db-host",
                 "server.port": db_info["port"] if db_info else 5432,
             },
+            events=db_events,
         )
         spans_by_service.setdefault(entry_service, []).append(db_span)
 
@@ -415,7 +488,7 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
 
             is_this_error = (is_error_trace and callee_service == error_service) or callee_error
             call_status = STATUS_ERROR if is_this_error else STATUS_OK
-            call_http_status = rng.choice([500, 502, 503, 504]) if is_this_error else 200
+            call_http_status = _get_cascade_http_status(callee_service, channel_registry, active_channels, rng) if is_this_error else 200
 
             # CLIENT span on the caller side
             client_span_id = _gen_span_id()
@@ -478,7 +551,28 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                 op, table, statement = rng.choice(_db_ops[callee_service])
                 db_info = _db_conn.get(callee_service, {}).get(table)
                 db_span_id = _gen_span_id()
-                db_duration = rng.randint(1, max(1, server_duration // 3))
+
+                # Chaos-aware: DB spans dominate trace when DB subsystem is under fault
+                _db_chaos = _get_db_chaos_info(callee_service, channel_registry, active_channels)
+                if _db_chaos:
+                    db_duration = rng.randint(int(server_duration * 0.6), max(int(server_duration * 0.6) + 1, int(server_duration * 0.9)))
+                    db_status = STATUS_ERROR
+                    _pool_active = rng.randint(95, 100)
+                    _wait_queue = rng.randint(200, 500)
+                    _wait_ms = rng.randint(3000, 5000)
+                    db_events = [client.build_exception_event(
+                        "org.postgresql.util.PSQLException",
+                        f"Cannot acquire connection from pool: active={_pool_active}/100, waitQueue={_wait_queue}, timeout after {_wait_ms}ms",
+                        "org.postgresql.util.PSQLException: Cannot acquire connection from pool\n"
+                        "  at com.zaxxer.hikari.pool.HikariPool.createTimeoutException(HikariPool.java:696)\n"
+                        "  at com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:197)\n"
+                        "  at com.zaxxer.hikari.HikariDataSource.getConnection(HikariDataSource.java:100)",
+                    )]
+                else:
+                    db_duration = rng.randint(1, max(1, server_duration // 3))
+                    db_status = STATUS_OK
+                    db_events = None
+
                 db_span = client.build_span(
                     name=f"{op} {table}",
                     trace_id=trace_id,
@@ -486,7 +580,7 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                     parent_span_id=server_span_id,
                     kind=SPAN_KIND_CLIENT,
                     duration_ms=db_duration,
-                    status_code=STATUS_OK,
+                    status_code=db_status,
                     attributes={
                         "db.system": db_info["db_system"] if db_info else "postgresql",
                         "db.name": db_info["db_name"] if db_info else f"{_namespace}_telemetry",
@@ -496,6 +590,7 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                         "server.address": db_info["host"] if db_info else f"{_namespace}-db-host",
                         "server.port": db_info["port"] if db_info else 5432,
                     },
+                    events=db_events,
                 )
                 spans_by_service.setdefault(callee_service, []).append(db_span)
 
