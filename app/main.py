@@ -110,6 +110,13 @@ app.mount(
     name="selector-static",
 )
 
+# Mount per-scenario static dirs (for scenario-specific slides, images, etc.)
+_scenarios_root = os.path.join(os.path.dirname(__file__), "..", "scenarios")
+for _sid in os.listdir(_scenarios_root):
+    _sdir = os.path.join(_scenarios_root, _sid, "static")
+    if os.path.isdir(_sdir):
+        app.mount(f"/scenarios/{_sid}/static", StaticFiles(directory=_sdir), name=f"{_sid}-static")
+
 # ── Scenario helper ──────────────────────────────────────────────────────────
 
 def _get_scenario_for_deployment(deployment_id: Optional[str] = None):
@@ -161,6 +168,7 @@ body {{ font-family: {theme.font_family}; }}"""
         "CHAOS_TITLE_PLACEHOLDER": theme.chaos_title,
         "LANDING_TITLE_PLACEHOLDER": theme.landing_title,
         "KIBANA_URL_PLACEHOLDER": kibana,
+        "SCENARIO_DESC_PLACEHOLDER": scenario.scenario_description,
     }
     for placeholder, value in replacements.items():
         html = html.replace(placeholder, value)
@@ -204,9 +212,20 @@ async def landing_page(deployment_id: Optional[str] = None):
 
 @app.get("/slides", response_class=HTMLResponse)
 async def slides_page(deployment_id: Optional[str] = None):
-    path = os.path.join(_base, "landing", "static", "slides.html")
-    with open(path) as f:
-        html = f.read()
+    """Slides deck — uses scenario-specific deck if available, else generic."""
+    scenario = _get_scenario_for_deployment(deployment_id)
+    # Try scenario-specific slides first
+    scenario_slides = os.path.join(
+        os.path.dirname(__file__), "..", "scenarios",
+        scenario.scenario_id, "static", "slides.html",
+    )
+    if os.path.exists(scenario_slides):
+        with open(scenario_slides) as f:
+            html = f.read()
+    else:
+        path = os.path.join(_base, "landing", "static", "slides.html")
+        with open(path) as f:
+            html = f.read()
     return HTMLResponse(content=_inject_theme(html, deployment_id))
 
 

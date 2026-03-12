@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Elastic AI-Powered Observability — NOVA-7</title>
+    <title>Elastic AI-Powered Observability — SCENARIO_NAME_PLACEHOLDER</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -457,7 +457,7 @@
 <body>
 
     <!-- Back to landing -->
-    <a href="/" class="back-link">&#8592; NOVA-7</a>
+    <a href="/home" class="back-link">&#8592; SCENARIO_NAME_PLACEHOLDER</a>
 
     <!-- Slide counter -->
     <div class="slide-counter"><span id="current-num">1</span> / 3</div>
@@ -532,12 +532,8 @@
             <div class="slide-bg slide-3-bg"></div>
             <div class="slide-content">
                 <div class="slide-prefix">Live Demo</div>
-                <div class="demo-title">NOVA-7 Orbital Insertion</div>
-                <div class="demo-desc">
-                    A multi-cloud space launch simulation generating real-time telemetry —
-                    observable through Elastic's AI-powered platform with automated
-                    root cause analysis, workflows, and remediation.
-                </div>
+                <div class="demo-title">SCENARIO_NAME_PLACEHOLDER</div>
+                <div class="demo-desc">SCENARIO_DESC_PLACEHOLDER</div>
                 <div class="demo-stats">
                     <div class="demo-stat">
                         <div class="demo-stat-value">9</div>
@@ -606,7 +602,7 @@
                 e.preventDefault();
                 prevSlide();
             } else if (e.key === 'Escape') {
-                window.location.href = '/';
+                window.location.href = '/home';
             }
         });
 
@@ -633,6 +629,20 @@
                 else prevSlide();
             }
         });
+
+        // Deployment ID propagation
+        window.DEPLOYMENT_ID = 'DEPLOYMENT_ID_PLACEHOLDER';
+        (function() {
+            var did = window.DEPLOYMENT_ID;
+            if (!did) return;
+            var qs = '?deployment_id=' + encodeURIComponent(did);
+            document.querySelectorAll('a[href]').forEach(function(a) {
+                var href = a.getAttribute('href');
+                if (href && href.startsWith('/') && !href.startsWith('//') && href.indexOf('?') === -1) {
+                    a.setAttribute('href', href + qs);
+                }
+            });
+        })();
     </script>
 
 </body>
