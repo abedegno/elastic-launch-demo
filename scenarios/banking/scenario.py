@@ -43,6 +43,77 @@ class BankingScenario(BaseScenario):
     def sort_order(self) -> int:
         return 6
 
+    @property
+    def executive_kpi_emitter_service_name(self) -> str:
+        return "member-portal"
+
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Retail banking KPIs** — revenue & margins, digital adoption, risk & compliance, "
+            "and customer health (synthetic `business.*` from `member-portal`)."
+        )
+
+    @property
+    def executive_kpi_sections(self) -> list[dict]:
+        return [
+            {
+                "header": "**Revenue & margins** — NII, fees, origination, interchange, and deposits",
+                "specs": [
+                    ("Net interest income (USD/min)", "metrics.business.net_interest_income_usd_per_min"),
+                    ("Fee revenue (USD/min)", "metrics.business.fee_revenue_usd_per_min"),
+                    ("Loan origination (USD/min)", "metrics.business.loan_origination_usd_per_min"),
+                    ("Card interchange (USD/min)", "metrics.business.card_interchange_usd_per_min"),
+                    ("Wealth AUM delta (USD/min)", "metrics.business.wealth_aum_delta_usd_per_min"),
+                    ("Deposit growth (USD/min)", "metrics.business.deposit_growth_usd_per_min"),
+                ],
+            },
+            {
+                "header": "**Digital adoption** — sessions, mobile, self-service, and API usage",
+                "specs": [
+                    ("Active digital sessions", "metrics.business.active_digital_sessions"),
+                    ("Mobile logins / min", "metrics.business.mobile_logins_per_min"),
+                    ("Digital transaction (%)", "metrics.business.digital_transaction_pct"),
+                    ("Self-service deflection (%)", "metrics.business.self_service_deflection_pct"),
+                    ("App session duration (s)", "metrics.business.app_session_duration_sec"),
+                    ("API calls / min", "metrics.business.api_calls_per_min"),
+                ],
+            },
+            {
+                "header": "**Risk & compliance** — fraud, AML, chargebacks, and regulatory",
+                "specs": [
+                    ("Fraud detection rate (%)", "metrics.business.fraud_detection_rate_pct"),
+                    ("Suspicious activity alerts / min", "metrics.business.suspicious_activity_alerts_per_min"),
+                    ("AML flags / min", "metrics.business.aml_flags_per_min"),
+                    ("Failed auth attempts / min", "metrics.business.failed_auth_attempts_per_min"),
+                    ("Chargeback rate (%)", "metrics.business.chargeback_rate_pct"),
+                    ("Regulatory breach count", "metrics.business.regulatory_breach_count"),
+                ],
+            },
+            {
+                "header": "**Customer health** — NPS, openings, closures, churn & satisfaction",
+                "specs": [
+                    ("Satisfaction proxy (NPS-like)", "metrics.business.net_satisfaction_proxy_nps"),
+                    ("Account openings / min", "metrics.business.account_openings_per_min"),
+                    ("Account closures / min", "metrics.business.account_closures_per_min"),
+                    ("Churn risk (0–100)", "metrics.business.churn_risk_index_0_100"),
+                    ("Complaint tickets / min", "metrics.business.complaint_tickets_per_min"),
+                    ("CSAT (0–5)", "metrics.business.csat_score_0_5"),
+                ],
+            },
+        ]
+
+    @property
+    def executive_trend_charts(self) -> list[dict]:
+        return [
+            {"title": "Net interest income trend", "field": "metrics.business.net_interest_income_usd_per_min", "y_label": "USD/min"},
+            {"title": "Loan origination trend", "field": "metrics.business.loan_origination_usd_per_min", "y_label": "USD/min"},
+            {"title": "Active digital sessions", "field": "metrics.business.active_digital_sessions", "y_label": "sessions"},
+            {"title": "Deposit growth trend", "field": "metrics.business.deposit_growth_usd_per_min", "y_label": "USD/min"},
+            {"title": "Fraud detection rate", "field": "metrics.business.fraud_detection_rate_pct", "y_label": "%"},
+            {"title": "Churn risk index", "field": "metrics.business.churn_risk_index_0_100", "y_label": "index"},
+        ]
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property

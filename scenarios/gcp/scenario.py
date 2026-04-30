@@ -43,6 +43,77 @@ class GCPScenario(BaseScenario):
     def sort_order(self) -> int:
         return 7
 
+    @property
+    def executive_kpi_emitter_service_name(self) -> str:
+        return "cloud-cdn-service"
+
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**GCP network KPIs** — CDN delivery, capacity & security, SLO compliance, "
+            "and cloud economics (synthetic `business.*` from `cloud-cdn-service`)."
+        )
+
+    @property
+    def executive_kpi_sections(self) -> list[dict]:
+        return [
+            {
+                "header": "**Delivery** — cache hit rate, requests, egress, offload, latency, and errors",
+                "specs": [
+                    ("CDN cache hit rate (%)", "metrics.business.cdn_cache_hit_rate_pct"),
+                    ("Requests / min", "metrics.business.requests_per_min"),
+                    ("Bytes egress (GiB/min)", "metrics.business.bytes_egress_gib_per_min"),
+                    ("Origin offload (%)", "metrics.business.origin_offload_pct"),
+                    ("Edge latency P50 (ms)", "metrics.business.edge_latency_p50_ms"),
+                    ("CDN error rate (%)", "metrics.business.cdn_error_rate_pct"),
+                ],
+            },
+            {
+                "header": "**Capacity & security** — bandwidth, interconnect, Cloud Armor, VPC, NAT, LB",
+                "specs": [
+                    ("Peak bandwidth utilization (%)", "metrics.business.peak_bandwidth_utilization_pct"),
+                    ("Interconnect utilization (%)", "metrics.business.interconnect_utilization_pct"),
+                    ("Cloud Armor blocks / min", "metrics.business.cloud_armor_blocks_per_min"),
+                    ("VPC flow anomalies / min", "metrics.business.vpc_flow_anomalies_per_min"),
+                    ("NAT port exhaustion (%)", "metrics.business.nat_port_exhaustion_rate_pct"),
+                    ("Load balancer RPS", "metrics.business.load_balancer_rps"),
+                ],
+            },
+            {
+                "header": "**SLO & reliability** — uptime, API success, SLA compliance, MTTD, MTTR",
+                "specs": [
+                    ("Uptime (%)", "metrics.business.uptime_pct"),
+                    ("API success rate (%)", "metrics.business.api_success_rate_pct"),
+                    ("Network SLA compliance (%)", "metrics.business.network_sla_compliance_pct"),
+                    ("Incident MTTD (min)", "metrics.business.incident_mttd_min"),
+                    ("Incident MTTR (min)", "metrics.business.incident_mttr_min"),
+                    ("Availability index (0–100)", "metrics.business.availability_index_0_100"),
+                ],
+            },
+            {
+                "header": "**Commercial** — spend, committed use, cost efficiency, carbon, and SLA breaches",
+                "specs": [
+                    ("Cloud spend (USD/min)", "metrics.business.cloud_spend_usd_per_min"),
+                    ("Committed use utilization (%)", "metrics.business.committed_use_discount_utilization_pct"),
+                    ("Cost / M requests (USD)", "metrics.business.cost_per_million_requests_usd"),
+                    ("Resource efficiency (%)", "metrics.business.resource_efficiency_pct"),
+                    ("Carbon intensity (gCO2/TiB)", "metrics.business.carbon_intensity_gco2_per_tib"),
+                    ("Customer SLA breaches", "metrics.business.customer_sla_breach_count"),
+                ],
+            },
+        ]
+
+    @property
+    def executive_trend_charts(self) -> list[dict]:
+        return [
+            {"title": "CDN cache hit rate", "field": "metrics.business.cdn_cache_hit_rate_pct", "y_label": "%"},
+            {"title": "Requests / min", "field": "metrics.business.requests_per_min", "y_label": "requests/min"},
+            {"title": "Bytes egress (GiB/min)", "field": "metrics.business.bytes_egress_gib_per_min", "y_label": "GiB/min"},
+            {"title": "Cloud Armor blocks / min", "field": "metrics.business.cloud_armor_blocks_per_min", "y_label": "blocks/min"},
+            {"title": "Cloud spend (USD/min)", "field": "metrics.business.cloud_spend_usd_per_min", "y_label": "USD/min"},
+            {"title": "Uptime (%)", "field": "metrics.business.uptime_pct", "y_label": "%"},
+        ]
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property

@@ -43,6 +43,77 @@ class FinancialScenario(BaseScenario):
     def sort_order(self) -> int:
         return 3
 
+    @property
+    def executive_kpi_emitter_service_name(self) -> str:
+        return "risk-calculator"
+
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Trading platform KPIs** — trade flow, risk exposure, market quality, "
+            "and settlement operations (synthetic `business.*` from `risk-calculator`)."
+        )
+
+    @property
+    def executive_kpi_sections(self) -> list[dict]:
+        return [
+            {
+                "header": "**Trade flow** — orders, fill rate, notional, executions, and rejects",
+                "specs": [
+                    ("Order flow / min", "metrics.business.order_flow_per_min"),
+                    ("Fill rate (%)", "metrics.business.fill_rate_pct"),
+                    ("Notional value (USD/min)", "metrics.business.notional_value_usd_per_min"),
+                    ("Executed trades / min", "metrics.business.executed_trades_per_min"),
+                    ("Rejected orders / min", "metrics.business.rejected_orders_per_min"),
+                    ("Cancel-replace rate (%)", "metrics.business.cancel_replace_rate_pct"),
+                ],
+            },
+            {
+                "header": "**Risk exposure** — VaR, margin, limits, delta, counterparty, and P&L",
+                "specs": [
+                    ("Portfolio VaR (USD)", "metrics.business.portfolio_var_usd"),
+                    ("Margin utilization (%)", "metrics.business.margin_utilization_pct"),
+                    ("Position limit breaches", "metrics.business.position_limit_breaches"),
+                    ("Delta exposure (USD)", "metrics.business.delta_exposure_usd"),
+                    ("Counterparty credit risk (USD)", "metrics.business.counterparty_credit_risk_usd"),
+                    ("Mark-to-market P&L (USD/min)", "metrics.business.mark_to_market_pnl_usd_per_min"),
+                ],
+            },
+            {
+                "header": "**Market quality** — spread, impact, slippage, latency, and best execution",
+                "specs": [
+                    ("Avg spread (bps)", "metrics.business.avg_spread_bps"),
+                    ("Market impact (bps)", "metrics.business.market_impact_bps"),
+                    ("Slippage cost (USD/min)", "metrics.business.slippage_cost_usd_per_min"),
+                    ("Latency SLA breach (%)", "metrics.business.latency_sla_breach_rate_pct"),
+                    ("Best execution (%)", "metrics.business.best_execution_pct"),
+                    ("Venue fill quality (%)", "metrics.business.venue_fill_quality_pct"),
+                ],
+            },
+            {
+                "header": "**Operations** — settlement, fails, breaks, alerts, availability, and reporting",
+                "specs": [
+                    ("Settlement success rate (%)", "metrics.business.settlement_success_rate_pct"),
+                    ("Settlement fails in queue", "metrics.business.settlement_fails_in_queue"),
+                    ("Reconciliation breaks", "metrics.business.reconciliation_breaks"),
+                    ("Ops alerts / min", "metrics.business.ops_alerts_per_min"),
+                    ("System availability (%)", "metrics.business.system_availability_pct"),
+                    ("Reporting latency (s)", "metrics.business.reporting_latency_sec"),
+                ],
+            },
+        ]
+
+    @property
+    def executive_trend_charts(self) -> list[dict]:
+        return [
+            {"title": "Order flow / min", "field": "metrics.business.order_flow_per_min", "y_label": "orders/min"},
+            {"title": "Notional value (USD/min)", "field": "metrics.business.notional_value_usd_per_min", "y_label": "USD/min"},
+            {"title": "Mark-to-market P&L", "field": "metrics.business.mark_to_market_pnl_usd_per_min", "y_label": "USD/min"},
+            {"title": "Portfolio VaR", "field": "metrics.business.portfolio_var_usd", "y_label": "USD"},
+            {"title": "Fill rate", "field": "metrics.business.fill_rate_pct", "y_label": "%"},
+            {"title": "Settlement success rate", "field": "metrics.business.settlement_success_rate_pct", "y_label": "%"},
+        ]
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property

@@ -42,6 +42,77 @@ class SpaceScenario(BaseScenario):
     def sort_order(self) -> int:
         return 1
 
+    @property
+    def executive_kpi_emitter_service_name(self) -> str:
+        return "mission-control"
+
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**NOVA-7 program view** — mission assurance, orbital mechanics, ground communications, "
+            "and program health KPIs (synthetic `business.*` streams from `mission-control`)."
+        )
+
+    @property
+    def executive_kpi_sections(self) -> list[dict]:
+        return [
+            {
+                "header": "**Mission assurance** — success probability, uptime, faults, recovery, and health",
+                "specs": [
+                    ("Mission success probability (%)", "metrics.business.mission_success_probability_pct"),
+                    ("Critical system uptime (%)", "metrics.business.critical_system_uptime_pct"),
+                    ("Fault events / min", "metrics.business.fault_events_per_min"),
+                    ("Autonomous recovery rate (%)", "metrics.business.autonomous_recovery_rate_pct"),
+                    ("Telemetry coverage (%)", "metrics.business.telemetry_coverage_pct"),
+                    ("Spacecraft health index (0–100)", "metrics.business.spacecraft_health_index_0_100"),
+                ],
+            },
+            {
+                "header": "**Orbital mechanics** — trajectory, delta-V, drift, accuracy, fuel, and altitude",
+                "specs": [
+                    ("Trajectory deviation (m)", "metrics.business.trajectory_deviation_meters"),
+                    ("Delta-V remaining (m/s)", "metrics.business.delta_v_budget_remaining_mps"),
+                    ("Orbital period drift (ms)", "metrics.business.orbital_period_drift_ms"),
+                    ("Maneuver accuracy (%)", "metrics.business.maneuver_accuracy_pct"),
+                    ("Station-keeping fuel (%)", "metrics.business.station_keeping_fuel_remaining_pct"),
+                    ("Perigee altitude (km)", "metrics.business.perigee_altitude_km"),
+                ],
+            },
+            {
+                "header": "**Communications** — downlink rate, uplink latency, contacts, packet loss, and ground",
+                "specs": [
+                    ("Downlink data rate (Mbps)", "metrics.business.downlink_data_rate_mbps"),
+                    ("Uplink latency (ms)", "metrics.business.uplink_latency_ms"),
+                    ("Contact window utilization (%)", "metrics.business.contact_window_utilization_pct"),
+                    ("Packet loss rate (%)", "metrics.business.packet_loss_rate_pct"),
+                    ("Command acceptance rate (%)", "metrics.business.command_acceptance_rate_pct"),
+                    ("Ground station availability (%)", "metrics.business.ground_station_availability_pct"),
+                ],
+            },
+            {
+                "header": "**Program health** — schedule, readiness, SLA, cost variance, risk, and NPS",
+                "specs": [
+                    ("Schedule variance (days)", "metrics.business.schedule_variance_days"),
+                    ("Launch readiness index (0–100)", "metrics.business.launch_readiness_index_0_100"),
+                    ("Contractor SLA compliance (%)", "metrics.business.contractor_sla_compliance_pct"),
+                    ("Cost variance (%)", "metrics.business.cost_variance_pct"),
+                    ("Risk burn-down rate", "metrics.business.risk_burn_down_rate"),
+                    ("Program satisfaction (NPS-like)", "metrics.business.program_net_satisfaction_proxy_nps"),
+                ],
+            },
+        ]
+
+    @property
+    def executive_trend_charts(self) -> list[dict]:
+        return [
+            {"title": "Mission success probability", "field": "metrics.business.mission_success_probability_pct", "y_label": "%"},
+            {"title": "Trajectory deviation (m)", "field": "metrics.business.trajectory_deviation_meters", "y_label": "m"},
+            {"title": "Downlink data rate (Mbps)", "field": "metrics.business.downlink_data_rate_mbps", "y_label": "Mbps"},
+            {"title": "Spacecraft health index", "field": "metrics.business.spacecraft_health_index_0_100", "y_label": "index"},
+            {"title": "Delta-V remaining (m/s)", "field": "metrics.business.delta_v_budget_remaining_mps", "y_label": "m/s"},
+            {"title": "Fault events / min", "field": "metrics.business.fault_events_per_min", "y_label": "events/min"},
+        ]
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property

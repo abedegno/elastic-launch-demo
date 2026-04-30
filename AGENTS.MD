@@ -1093,6 +1093,8 @@ POST /api/actions/connector
 
 43. **Scope all ES|QL queries to the namespace child stream, not the root stream** — All ES|QL queries in agent tools, workflows, dashboards, and significant events should use `FROM logs.otel.{ns},logs.otel.{ns}.*` (e.g. `logs.otel.gaming,logs.otel.gaming.*`), not `FROM logs.otel,logs.otel.*`. The child stream is created by forking `logs.otel` on deployment and contains only that scenario's logs. Querying the root stream in a multi-scenario environment returns data from all scenarios. `app/telemetry.py` remains pointed at `logs.otel` for OTLP ingestion — the fork routing is server-side and transparent to the sender.
 
+44. **All scenario-specific data belongs in the scenario's own folder** — Every property that varies by scenario (display text, KPI fields, service names, thresholds, etc.) must be defined as a property on the scenario class in `scenarios/<id>/scenario.py`, not as a lookup dict or `if/elif` block in shared code outside `scenarios/`. The base class in `scenarios/base.py` provides the default/fallback; each scenario overrides it. The dashboard generator, deployer, and agent code must call `scenario.<property>` — never key off `scenario.scenario_id` to branch on scenario-specific values. This keeps all scenario content co-located and ensures adding a new scenario requires changes only in `scenarios/<new_id>/`.
+
 ---
 
 ## Deployer Architecture & URL Derivation

@@ -118,6 +118,41 @@ class BaseScenario(ABC):
         """Display order on the scenario selector. Lower numbers appear first. Default 999."""
         return 999
 
+    @property
+    def executive_kpi_emitter_service_name(self) -> str | None:
+        """`SERVICE_NAME` of the one microservice that emits synthetic `business.*` executive KPI gauges.
+
+        Used by the Kibana Executive dashboard (Lens). Override in each scenario.
+        """
+        return None
+
+    @property
+    def executive_dashboard_intro(self) -> str:
+        """Markdown intro shown at the top of the Executive Dashboard. Override in each scenario."""
+        svc = self.executive_kpi_emitter_service_name or "executive-service"
+        return (
+            f"**Executive view** — cross-functional KPIs for {self.scenario_name} "
+            f"(synthetic `business.*` from `{svc}`)."
+        )
+
+    @property
+    def executive_kpi_sections(self) -> list[dict]:
+        """KPI tile sections for the Executive Dashboard.
+
+        Each dict: {"header": str, "specs": [(display_title, metrics_field), ...]}
+        Override in each scenario with industry-appropriate metrics.
+        """
+        return []
+
+    @property
+    def executive_trend_charts(self) -> list[dict]:
+        """Trend line charts for the Executive Dashboard (6, arranged 3×2).
+
+        Each dict: {"title": str, "field": str, "y_label": str}
+        Override in each scenario with the most important metrics to trend.
+        """
+        return []
+
     # ── Services & Topology ──────────────────────────────────────────
 
     @property

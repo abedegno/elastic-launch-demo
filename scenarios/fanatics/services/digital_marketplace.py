@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 
 from app.services.base_service import BaseService
+from scenarios.fanatics.executive_kpis import emit_executive_business_metrics_if_eligible
 
 
 class DigitalMarketplaceService(BaseService):
@@ -32,6 +33,8 @@ class DigitalMarketplaceService(BaseService):
         )
         self.emit_metric("marketplace.cart_conversion_pct", cart_conversion, "%")
         self.emit_metric("marketplace.avg_response_ms", avg_response_ms, "ms")
+
+        emit_executive_business_metrics_if_eligible(self)
 
         self.emit_log(
             "INFO",

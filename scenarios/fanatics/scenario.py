@@ -43,6 +43,77 @@ class FanaticsScenario(BaseScenario):
     def sort_order(self) -> int:
         return 2
 
+    @property
+    def executive_kpi_emitter_service_name(self) -> str:
+        return "digital-marketplace"
+
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Fanatics executive KPIs** — sports media, streaming, fantasy, collectibles "
+            "commerce, sponsorship, and regulated wagering (synthetic `business.*` from `digital-marketplace`)."
+        )
+
+    @property
+    def executive_kpi_sections(self) -> list[dict]:
+        return [
+            {
+                "header": "**Monetization & wagering** — ads, subscriptions, handle, and margin",
+                "specs": [
+                    ("Ad revenue (USD/min)", "metrics.business.ad_revenue_usd_per_min"),
+                    ("Programmatic fill (%)", "metrics.business.programmatic_fill_rate_pct"),
+                    ("Betting handle (USD/min)", "metrics.business.betting_handle_usd_per_min"),
+                    ("Sportsbook hold (%)", "metrics.business.betting_hold_pct"),
+                    ("Gross win (USD/min)", "metrics.business.betting_gross_win_usd_per_min"),
+                    ("Subscription MRR (USD/min)", "metrics.business.subscription_mrr_usd_per_min"),
+                ],
+            },
+            {
+                "header": "**Audience & engagement** — live scale, video, traffic, sessions, fantasy",
+                "specs": [
+                    ("Live concurrent viewers", "metrics.business.live_concurrent_viewers"),
+                    ("Video min engaged / min", "metrics.business.video_minutes_engaged_per_min"),
+                    ("Page views / min", "metrics.business.page_views_per_min"),
+                    ("App sessions / min", "metrics.business.app_sessions_per_min"),
+                    ("Content completion (%)", "metrics.business.content_completion_rate_pct"),
+                    ("Fantasy active entries", "metrics.business.fantasy_active_entries"),
+                ],
+            },
+            {
+                "header": "**Commerce & partners** — merch, tickets, sponsorship, B2B data",
+                "specs": [
+                    ("Merch GMV (USD/min)", "metrics.business.merch_gmv_usd_per_min"),
+                    ("Live ticketing (USD/min)", "metrics.business.live_event_ticketing_usd_per_min"),
+                    ("Partner sponsorship (USD/min)", "metrics.business.partner_sponsorship_usd_per_min"),
+                    ("API / data partner (USD/min)", "metrics.business.api_data_partner_revenue_usd_per_min"),
+                    ("Sponsored inv. (s/min)", "metrics.business.sponsored_inventory_seconds_per_min"),
+                    ("Premium ARPU (USD)", "metrics.business.premium_tier_arpu_usd"),
+                ],
+            },
+            {
+                "header": "**Marketing & health** — CRM, loyalty, social, churn & satisfaction proxies",
+                "specs": [
+                    ("Push CTR (%)", "metrics.business.push_notification_ctr_pct"),
+                    ("Newsletter open (%)", "metrics.business.newsletter_open_rate_pct"),
+                    ("Loyalty redeem (pts/min)", "metrics.business.loyalty_points_redeemed_per_min"),
+                    ("Social clip shares / min", "metrics.business.social_clip_shares_per_min"),
+                    ("Churn risk (0–100)", "metrics.business.churn_risk_index_0_100"),
+                    ("Satisfaction proxy (NPS-like)", "metrics.business.net_satisfaction_proxy_nps"),
+                ],
+            },
+        ]
+
+    @property
+    def executive_trend_charts(self) -> list[dict]:
+        return [
+            {"title": "Ad revenue trend", "field": "metrics.business.ad_revenue_usd_per_min", "y_label": "USD/min"},
+            {"title": "Video engagement (min/min)", "field": "metrics.business.video_minutes_engaged_per_min", "y_label": "min/min"},
+            {"title": "Live concurrent viewers", "field": "metrics.business.live_concurrent_viewers", "y_label": "viewers"},
+            {"title": "Betting handle trend", "field": "metrics.business.betting_handle_usd_per_min", "y_label": "USD/min"},
+            {"title": "Subscription MRR trend", "field": "metrics.business.subscription_mrr_usd_per_min", "y_label": "USD/min"},
+            {"title": "Merch GMV trend", "field": "metrics.business.merch_gmv_usd_per_min", "y_label": "USD/min"},
+        ]
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property
