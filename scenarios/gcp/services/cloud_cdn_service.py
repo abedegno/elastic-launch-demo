@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 
 from app.services.base_service import BaseService
-from scenarios.executive_kpis import emit_executive_business_metrics_if_eligible
+from scenarios.gcp.executive_kpis import emit_executive_business_metrics_if_eligible
 
 
 class CloudCdnService(BaseService):

@@ -49,9 +49,69 @@ class EcommerceScenario(BaseScenario):
     @property
     def executive_dashboard_intro(self) -> str:
         return (
-            "**Executive commerce & ads** — traffic, GMV, and monetization stack KPIs "
-            "(synthetic `business.*` from `ad-platform`)."
+            "**Commerce & advertising KPIs** — revenue, traffic & engagement, fulfillment, "
+            "and customer health (synthetic `business.*` from `ad-platform`)."
         )
+
+    @property
+    def executive_kpi_sections(self) -> list[dict]:
+        return [
+            {
+                "header": "**Revenue** — GMV, conversion, AOV, ads, subscriptions, and seller fees",
+                "specs": [
+                    ("GMV (USD/min)", "metrics.business.gmv_usd_per_min"),
+                    ("Conversion rate (%)", "metrics.business.conversion_rate_pct"),
+                    ("Average order value (USD)", "metrics.business.average_order_value_usd"),
+                    ("Ad revenue (USD/min)", "metrics.business.ad_revenue_usd_per_min"),
+                    ("Subscription MRR (USD/min)", "metrics.business.subscription_mrr_usd_per_min"),
+                    ("Seller fee revenue (USD/min)", "metrics.business.seller_fee_revenue_usd_per_min"),
+                ],
+            },
+            {
+                "header": "**Traffic & engagement** — sessions, views, cart, search, and retention",
+                "specs": [
+                    ("Sessions / min", "metrics.business.sessions_per_min"),
+                    ("Page views / min", "metrics.business.page_views_per_min"),
+                    ("Cart adds / min", "metrics.business.cart_adds_per_min"),
+                    ("Search queries / min", "metrics.business.search_queries_per_min"),
+                    ("Content completion (%)", "metrics.business.content_completion_rate_pct"),
+                    ("Return visitor (%)", "metrics.business.return_visitor_pct"),
+                ],
+            },
+            {
+                "header": "**Fulfillment** — orders, SLA, returns, cancels, same-day, and inventory",
+                "specs": [
+                    ("Orders placed / min", "metrics.business.orders_placed_per_min"),
+                    ("Fulfillment SLA (%)", "metrics.business.fulfillment_sla_pct"),
+                    ("Returns / min", "metrics.business.returns_per_min"),
+                    ("Cancel rate (%)", "metrics.business.cancel_rate_pct"),
+                    ("Same-day eligible (%)", "metrics.business.same_day_eligible_pct"),
+                    ("Inventory turn rate", "metrics.business.inventory_turn_rate"),
+                ],
+            },
+            {
+                "header": "**Customer health** — CSAT, NPS, churn, email, push, and loyalty",
+                "specs": [
+                    ("CSAT (0–5)", "metrics.business.csat_score_0_5"),
+                    ("Satisfaction proxy (NPS-like)", "metrics.business.net_satisfaction_proxy_nps"),
+                    ("Churn risk (0–100)", "metrics.business.churn_risk_index_0_100"),
+                    ("Email open rate (%)", "metrics.business.email_open_rate_pct"),
+                    ("Push CTR (%)", "metrics.business.push_notification_ctr_pct"),
+                    ("Loyalty redeem (pts/min)", "metrics.business.loyalty_points_redeemed_per_min"),
+                ],
+            },
+        ]
+
+    @property
+    def executive_trend_charts(self) -> list[dict]:
+        return [
+            {"title": "GMV trend", "field": "metrics.business.gmv_usd_per_min", "y_label": "USD/min"},
+            {"title": "Sessions / min", "field": "metrics.business.sessions_per_min", "y_label": "sessions/min"},
+            {"title": "Conversion rate", "field": "metrics.business.conversion_rate_pct", "y_label": "%"},
+            {"title": "Orders placed / min", "field": "metrics.business.orders_placed_per_min", "y_label": "orders/min"},
+            {"title": "Ad revenue trend", "field": "metrics.business.ad_revenue_usd_per_min", "y_label": "USD/min"},
+            {"title": "Churn risk index", "field": "metrics.business.churn_risk_index_0_100", "y_label": "index"},
+        ]
 
     # ── Services ──────────────────────────────────────────────────────
 

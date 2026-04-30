@@ -11,7 +11,7 @@ Primary output: **Systems Operations Dashboard** (saved object id `{namespace}-e
 
 Also emits a second saved object, **Executive Dashboard** (id `{namespace}-business-exec-dashboard`),
 when the scenario defines `executive_kpi_emitter_service_name`. Synthetic `business.*` OTLP gauges
-are emitted once per cycle from that service (`scenarios/executive_kpis.py`).
+are emitted once per cycle from that service (`scenarios/{name}/executive_kpis.py`).
 
 Produces by-value Lens panels using the formBased datasource format that matches
 the built-in [OTel] dashboards shipped with Kibana 9.4, including all required
@@ -1308,158 +1308,39 @@ def _build_business_executive_dashboard_ndjson(scenario) -> str:
         for i, (title, field) in enumerate(specs):
             _eb_metric_tile(f"eb_k_{y_row}_{i}", i * kw, y_row, kw, title, field)
 
-    panels.append(
-        {
-            "type": "DASHBOARD_MARKDOWN",
-            "embeddableConfig": {
-                "content": "**Monetization & wagering** \u2014 ads, subscriptions, handle, and margin",
-            },
-            "panelIndex": "eb_h1",
-            "gridData": {"h": 2, "i": "eb_h1", "w": 48, "x": 0, "y": 3},
-        }
-    )
-    _kpi_row(
-        5,
-        [
-            ("Ad revenue (USD/min)", "metrics.business.ad_revenue_usd_per_min"),
-            ("Programmatic fill (%)", "metrics.business.programmatic_fill_rate_pct"),
-            ("Betting handle (USD/min)", "metrics.business.betting_handle_usd_per_min"),
-            ("Sportsbook hold (%)", "metrics.business.betting_hold_pct"),
-            ("Gross win (USD/min)", "metrics.business.betting_gross_win_usd_per_min"),
-            ("Subscription MRR (USD/min)", "metrics.business.subscription_mrr_usd_per_min"),
-        ],
-    )
+    # KPI sections — defined per-scenario via executive_kpi_sections
+    kpi_sections = getattr(scenario, "executive_kpi_sections", [])
+    section_y = 3
+    for s_idx, section in enumerate(kpi_sections):
+        h_pid = f"eb_h{s_idx + 1}"
+        panels.append(
+            {
+                "type": "DASHBOARD_MARKDOWN",
+                "embeddableConfig": {"content": section["header"]},
+                "panelIndex": h_pid,
+                "gridData": {"h": 2, "i": h_pid, "w": 48, "x": 0, "y": section_y},
+            }
+        )
+        _kpi_row(section_y + 2, section["specs"])
+        section_y += 7  # 2 header + 5 tile row
 
-    panels.append(
-        {
-            "type": "DASHBOARD_MARKDOWN",
-            "embeddableConfig": {
-                "content": "**Audience & engagement** \u2014 live scale, video, traffic, sessions, fantasy",
-            },
-            "panelIndex": "eb_h2",
-            "gridData": {"h": 2, "i": "eb_h2", "w": 48, "x": 0, "y": 10},
-        }
-    )
-    _kpi_row(
-        12,
-        [
-            ("Live concurrent viewers", "metrics.business.live_concurrent_viewers"),
-            ("Video min engaged / min", "metrics.business.video_minutes_engaged_per_min"),
-            ("Page views / min", "metrics.business.page_views_per_min"),
-            ("App sessions / min", "metrics.business.app_sessions_per_min"),
-            ("Content completion (%)", "metrics.business.content_completion_rate_pct"),
-            ("Fantasy active entries", "metrics.business.fantasy_active_entries"),
-        ],
-    )
-
-    panels.append(
-        {
-            "type": "DASHBOARD_MARKDOWN",
-            "embeddableConfig": {
-                "content": "**Commerce & partners** \u2014 merch, tickets, sponsorship, B2B data",
-            },
-            "panelIndex": "eb_h3",
-            "gridData": {"h": 2, "i": "eb_h3", "w": 48, "x": 0, "y": 17},
-        }
-    )
-    _kpi_row(
-        19,
-        [
-            ("Merch GMV (USD/min)", "metrics.business.merch_gmv_usd_per_min"),
-            ("Live ticketing (USD/min)", "metrics.business.live_event_ticketing_usd_per_min"),
-            ("Partner sponsorship (USD/min)", "metrics.business.partner_sponsorship_usd_per_min"),
-            ("API / data partner (USD/min)", "metrics.business.api_data_partner_revenue_usd_per_min"),
-            ("Sponsored inv. (s/min)", "metrics.business.sponsored_inventory_seconds_per_min"),
-            ("Premium ARPU (USD)", "metrics.business.premium_tier_arpu_usd"),
-        ],
-    )
-
-    panels.append(
-        {
-            "type": "DASHBOARD_MARKDOWN",
-            "embeddableConfig": {
-                "content": "**Marketing & health** \u2014 CRM, loyalty, social, churn & satisfaction proxies",
-            },
-            "panelIndex": "eb_h4",
-            "gridData": {"h": 2, "i": "eb_h4", "w": 48, "x": 0, "y": 24},
-        }
-    )
-    _kpi_row(
-        26,
-        [
-            ("Push CTR (%)", "metrics.business.push_notification_ctr_pct"),
-            ("Newsletter open (%)", "metrics.business.newsletter_open_rate_pct"),
-            ("Loyalty redeem (pts/min)", "metrics.business.loyalty_points_redeemed_per_min"),
-            ("Social clip shares / min", "metrics.business.social_clip_shares_per_min"),
-            ("Churn risk (0\u2013100)", "metrics.business.churn_risk_index_0_100"),
-            ("Satisfaction proxy (NPS-like)", "metrics.business.net_satisfaction_proxy_nps"),
-        ],
-    )
-
-    # Trend charts — leadership scan of money, audience, and commerce
-    y_charts = 31
+    # Trend charts — defined per-scenario via executive_trend_charts (6, laid out 3x2)
+    trend_specs = getattr(scenario, "executive_trend_charts", [])
+    y_charts = section_y
     ch = 11
     w3 = 16
-    _eb_line_chart(
-        "eb_ts_ad",
-        0,
-        y_charts,
-        w3,
-        ch,
-        "Ad revenue trend",
-        "metrics.business.ad_revenue_usd_per_min",
-        "USD/min",
-    )
-    _eb_line_chart(
-        "eb_ts_vid",
-        w3,
-        y_charts,
-        w3,
-        ch,
-        "Video engagement (minutes/min)",
-        "metrics.business.video_minutes_engaged_per_min",
-        "min/min",
-    )
-    _eb_line_chart(
-        "eb_ts_ccv",
-        2 * w3,
-        y_charts,
-        w3,
-        ch,
-        "Live concurrent viewers",
-        "metrics.business.live_concurrent_viewers",
-        "viewers",
-    )
-    _eb_line_chart(
-        "eb_ts_handle",
-        0,
-        y_charts + ch,
-        w3,
-        ch,
-        "Betting handle trend",
-        "metrics.business.betting_handle_usd_per_min",
-        "USD/min",
-    )
-    _eb_line_chart(
-        "eb_ts_mrr",
-        w3,
-        y_charts + ch,
-        w3,
-        ch,
-        "Subscription MRR trend",
-        "metrics.business.subscription_mrr_usd_per_min",
-        "USD/min",
-    )
-    _eb_line_chart(
-        "eb_ts_merch",
-        2 * w3,
-        y_charts + ch,
-        w3,
-        ch,
-        "Merch GMV trend",
-        "metrics.business.merch_gmv_usd_per_min",
-        "USD/min",
-    )
+    positions = [
+        (0, y_charts), (w3, y_charts), (2 * w3, y_charts),
+        (0, y_charts + ch), (w3, y_charts + ch), (2 * w3, y_charts + ch),
+    ]
+    for t_idx, (chart, (cx, cy)) in enumerate(zip(trend_specs, positions)):
+        _eb_line_chart(
+            f"eb_ts_{t_idx}",
+            cx, cy, w3, ch,
+            chart["title"],
+            chart["field"],
+            chart["y_label"],
+        )
 
     all_refs: list[dict] = []
     seen_ref_names: set[str] = set()
@@ -1473,11 +1354,7 @@ def _build_business_executive_dashboard_ndjson(scenario) -> str:
 
     dashboard = {
         "attributes": {
-            "description": (
-                f"Executive leadership KPIs for {scenario_name} \u2014 audience, video, "
-                f"subscriptions, commerce, sponsorship, fantasy, wagering, and health proxies "
-                f"(synthetic OTLP gauges from `{svc}`)."
-            ),
+            "description": intro,
             "kibanaSavedObjectMeta": {
                 "searchSourceJSON": json.dumps(
                     {"query": {"language": "kuery", "query": ""}, "filter": []}

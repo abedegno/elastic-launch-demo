@@ -6,7 +6,7 @@ import random
 import time
 
 from app.services.base_service import BaseService
-from scenarios.executive_kpis import emit_executive_business_metrics_if_eligible
+from scenarios.financial.executive_kpis import emit_executive_business_metrics_if_eligible
 
 
 class RiskCalculatorService(BaseService):

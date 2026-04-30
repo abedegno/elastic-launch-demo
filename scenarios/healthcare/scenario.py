@@ -50,9 +50,69 @@ class HealthcareScenario(BaseScenario):
     @property
     def executive_dashboard_intro(self) -> str:
         return (
-            "**Executive clinical operations** — access, throughput, and revenue-cycle "
-            "proxies for hospital leadership (synthetic `business.*` from `billing-processor`)."
+            "**Hospital operations KPIs** — access & throughput, revenue cycle, clinical quality, "
+            "and EHR operations (synthetic `business.*` from `billing-processor`)."
         )
+
+    @property
+    def executive_kpi_sections(self) -> list[dict]:
+        return [
+            {
+                "header": "**Access & throughput** — ED time, admits, discharges, bed, OR, and ICU",
+                "specs": [
+                    ("ED door-to-provider (min)", "metrics.business.ed_door_to_provider_min"),
+                    ("Admits / min", "metrics.business.admits_per_min"),
+                    ("Discharges / min", "metrics.business.discharges_per_min"),
+                    ("Bed occupancy (%)", "metrics.business.bed_occupancy_pct"),
+                    ("OR utilization (%)", "metrics.business.or_utilization_pct"),
+                    ("ICU capacity (%)", "metrics.business.icu_capacity_pct"),
+                ],
+            },
+            {
+                "header": "**Revenue cycle** — claims, clean rate, denials, AR days, and collections",
+                "specs": [
+                    ("Claims submitted / min", "metrics.business.claims_submitted_per_min"),
+                    ("Clean claim rate (%)", "metrics.business.clean_claim_rate_pct"),
+                    ("Denials / min", "metrics.business.denials_per_min"),
+                    ("AR days", "metrics.business.accounts_receivable_days"),
+                    ("Collections (USD/min)", "metrics.business.collections_usd_per_min"),
+                    ("Unbilled charges (USD/min)", "metrics.business.unbilled_charges_usd_per_min"),
+                ],
+            },
+            {
+                "header": "**Clinical quality** — order TAT, lab alerts, med reconciliation, and safety",
+                "specs": [
+                    ("Order turnaround (min)", "metrics.business.order_turnaround_min"),
+                    ("Lab critical notification (%)", "metrics.business.lab_critical_notification_pct"),
+                    ("Medication reconciliation (%)", "metrics.business.medication_reconciliation_rate_pct"),
+                    ("Patient safety events / min", "metrics.business.patient_safety_events_per_min"),
+                    ("HCAHPS proxy score", "metrics.business.hcahps_proxy_score"),
+                    ("Readmission risk (0–100)", "metrics.business.readmission_risk_index_0_100"),
+                ],
+            },
+            {
+                "header": "**Operations** — EHR response, HL7, imaging, no-shows, satisfaction, and compliance",
+                "specs": [
+                    ("EHR response time (ms)", "metrics.business.ehr_response_time_ms"),
+                    ("HL7 messages / min", "metrics.business.hl7_messages_per_min"),
+                    ("Imaging worklist size", "metrics.business.imaging_worklist_size"),
+                    ("Appointment no-show rate (%)", "metrics.business.appointment_no_show_rate_pct"),
+                    ("Patient satisfaction (NPS-like)", "metrics.business.patient_satisfaction_nps"),
+                    ("Staff compliance rate (%)", "metrics.business.staff_compliance_rate_pct"),
+                ],
+            },
+        ]
+
+    @property
+    def executive_trend_charts(self) -> list[dict]:
+        return [
+            {"title": "Admits / min", "field": "metrics.business.admits_per_min", "y_label": "admits/min"},
+            {"title": "Bed occupancy (%)", "field": "metrics.business.bed_occupancy_pct", "y_label": "%"},
+            {"title": "Collections (USD/min)", "field": "metrics.business.collections_usd_per_min", "y_label": "USD/min"},
+            {"title": "Clean claim rate (%)", "field": "metrics.business.clean_claim_rate_pct", "y_label": "%"},
+            {"title": "ED door-to-provider (min)", "field": "metrics.business.ed_door_to_provider_min", "y_label": "min"},
+            {"title": "EHR response time (ms)", "field": "metrics.business.ehr_response_time_ms", "y_label": "ms"},
+        ]
 
     # -- Services ---------------------------------------------------------------
 
