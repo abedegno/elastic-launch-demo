@@ -84,7 +84,7 @@
         }
         .scenario-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
             gap: 16px;
         }
         .scenario-card {
@@ -636,7 +636,7 @@
             card.innerHTML = `
                 <div class="scenario-icon">${s.icon || '\uD83D\uDD27'}</div>
                 <h3>${s.name}</h3>
-                <p>${s.description.substring(0, 120)}${s.description.length > 120 ? '...' : ''}</p>
+                <p>${s.description}</p>
                 <span class="scenario-ns">${s.namespace}</span>
                 <span class="running-badge" style="display: ${isRunning ? 'inline-block' : 'none'};
                     position: absolute; top: 10px; right: 10px; background: var(--green); color: #000;
