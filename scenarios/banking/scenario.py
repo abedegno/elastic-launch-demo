@@ -47,6 +47,13 @@ class BankingScenario(BaseScenario):
     def executive_kpi_emitter_service_name(self) -> str:
         return "member-portal"
 
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Executive retail banking** — digital adoption, deposits, and franchise health "
+            "proxies (synthetic `business.*` from `member-portal`)."
+        )
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property

@@ -46,6 +46,13 @@ class EcommerceScenario(BaseScenario):
     def executive_kpi_emitter_service_name(self) -> str:
         return "ad-platform"
 
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Executive commerce & ads** — traffic, GMV, and monetization stack KPIs "
+            "(synthetic `business.*` from `ad-platform`)."
+        )
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property

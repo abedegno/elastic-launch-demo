@@ -46,6 +46,13 @@ class GamingScenario(BaseScenario):
     def executive_kpi_emitter_service_name(self) -> str:
         return "analytics-pipeline"
 
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Executive live-ops view** — engagement, monetization, and community health "
+            "KPIs for the gaming surface (synthetic `business.*` from `analytics-pipeline`)."
+        )
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property

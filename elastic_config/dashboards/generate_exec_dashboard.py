@@ -1204,45 +1204,6 @@ def _build_dashboard_ndjson(
     return json.dumps(dashboard, separators=(",", ":")) + "\n"
 
 
-# Intro markdown for the second (Executive) dashboard — one block per scenario_id.
-_EXEC_BUSINESS_DASHBOARD_INTROS: dict[str, str] = {
-    "space": (
-        "**Executive program view** \u2014 launch tempo, mission assurance, and "
-        "commercial-adjacent KPIs (synthetic `business.*` streams from Mission Control). "
-        "Same leadership layout as other scenarios for a consistent board deck."
-    ),
-    "fanatics": (
-        "**Executive leadership view** \u2014 sports media, streaming, fantasy, "
-        "commerce, sponsorship, and regulated wagering on one screen (synthetic OTLP "
-        "streams from `digital-marketplace`)."
-    ),
-    "financial": (
-        "**Executive trading view** \u2014 flow, risk, and franchise KPIs synthesized "
-        "for the trading platform (synthetic `business.*` from `risk-calculator`)."
-    ),
-    "healthcare": (
-        "**Executive clinical operations** \u2014 access, throughput, and revenue-cycle "
-        "proxies for hospital leadership (synthetic `business.*` from `billing-processor`)."
-    ),
-    "gaming": (
-        "**Executive live-ops view** \u2014 engagement, monetization, and community health "
-        "KPIs for the gaming surface (synthetic `business.*` from `analytics-pipeline`)."
-    ),
-    "banking": (
-        "**Executive retail banking** \u2014 digital adoption, deposits, and franchise health "
-        "proxies (synthetic `business.*` from `member-portal`)."
-    ),
-    "ecommerce": (
-        "**Executive commerce & ads** \u2014 traffic, GMV, and monetization stack KPIs "
-        "(synthetic `business.*` from `ad-platform`)."
-    ),
-    "gcp": (
-        "**Executive network & edge** \u2014 delivery scale, partner, and commercial KPIs "
-        "for GCP networking (synthetic `business.*` from `cloud-cdn-service`)."
-    ),
-}
-
-
 def _build_business_executive_dashboard_ndjson(scenario) -> str:
     """Second saved object: `{namespace}-business-exec-dashboard` for senior-leadership KPIs."""
     svc = getattr(scenario, "executive_kpi_emitter_service_name", None)
@@ -1253,13 +1214,7 @@ def _build_business_executive_dashboard_ndjson(scenario) -> str:
     namespace = scenario.namespace
     dashboard_id = f"{namespace}-business-exec-dashboard"
     svc_kql = f'resource.attributes.service.name: "{svc}"'
-    intro = _EXEC_BUSINESS_DASHBOARD_INTROS.get(
-        scenario.scenario_id,
-        (
-            f"**Executive view** \u2014 cross-functional KPIs for {scenario_name} "
-            f"(synthetic `business.*` from `{svc}`)."
-        ),
-    )
+    intro = scenario.executive_dashboard_intro
 
     panels: list[dict] = []
 

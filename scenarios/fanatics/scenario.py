@@ -47,6 +47,14 @@ class FanaticsScenario(BaseScenario):
     def executive_kpi_emitter_service_name(self) -> str:
         return "digital-marketplace"
 
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Executive leadership view** — sports media, streaming, fantasy, "
+            "commerce, sponsorship, and regulated wagering on one screen (synthetic OTLP "
+            "streams from `digital-marketplace`)."
+        )
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property

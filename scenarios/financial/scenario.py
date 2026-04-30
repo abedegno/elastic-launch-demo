@@ -47,6 +47,13 @@ class FinancialScenario(BaseScenario):
     def executive_kpi_emitter_service_name(self) -> str:
         return "risk-calculator"
 
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Executive trading view** — flow, risk, and franchise KPIs synthesized "
+            "for the trading platform (synthetic `business.*` from `risk-calculator`)."
+        )
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property

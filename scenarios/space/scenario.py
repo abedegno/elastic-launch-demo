@@ -46,6 +46,14 @@ class SpaceScenario(BaseScenario):
     def executive_kpi_emitter_service_name(self) -> str:
         return "mission-control"
 
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Executive program view** — launch tempo, mission assurance, and "
+            "commercial-adjacent KPIs (synthetic `business.*` streams from Mission Control). "
+            "Same leadership layout as other scenarios for a consistent board deck."
+        )
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property

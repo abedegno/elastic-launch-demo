@@ -126,6 +126,15 @@ class BaseScenario(ABC):
         """
         return None
 
+    @property
+    def executive_dashboard_intro(self) -> str:
+        """Markdown intro shown at the top of the Executive Dashboard. Override in each scenario."""
+        svc = self.executive_kpi_emitter_service_name or "executive-service"
+        return (
+            f"**Executive view** — cross-functional KPIs for {self.scenario_name} "
+            f"(synthetic `business.*` from `{svc}`)."
+        )
+
     # ── Services & Topology ──────────────────────────────────────────
 
     @property

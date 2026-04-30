@@ -47,6 +47,13 @@ class GCPScenario(BaseScenario):
     def executive_kpi_emitter_service_name(self) -> str:
         return "cloud-cdn-service"
 
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Executive network & edge** — delivery scale, partner, and commercial KPIs "
+            "for GCP networking (synthetic `business.*` from `cloud-cdn-service`)."
+        )
+
     # ── Services ──────────────────────────────────────────────────────
 
     @property

@@ -47,6 +47,13 @@ class HealthcareScenario(BaseScenario):
     def executive_kpi_emitter_service_name(self) -> str:
         return "billing-processor"
 
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Executive clinical operations** — access, throughput, and revenue-cycle "
+            "proxies for hospital leadership (synthetic `business.*` from `billing-processor`)."
+        )
+
     # -- Services ---------------------------------------------------------------
 
     @property
