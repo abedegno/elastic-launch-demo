@@ -224,28 +224,32 @@ class FinancialScenario(BaseScenario):
                 ),
             },
             2: {
-                "name": "Matching Engine Latency",
-                "subsystem": "trade_execution",
-                "vehicle_section": "matching_core",
-                "error_type": "ME-LATENCY-SLA",
-                "sensor_type": "latency_monitor",
-                "affected_services": ["matching-engine", "order-gateway"],
-                "cascade_services": ["risk-calculator", "settlement-processor"],
-                "description": "Matching engine order processing latency exceeds SLA threshold",
-                "error_message": "[ME] ME-LATENCY-SLA: order={order_id} latency_us={latency_us} sla_us={sla_us} partition={partition_id}",
+                "name": "Audit Log Sequence Gap",
+                "subsystem": "audit",
+                "vehicle_section": "audit_pipeline",
+                "error_type": "AUDIT-SEQ-GAP",
+                "sensor_type": "sequence_validator",
+                "affected_services": ["audit-logger", "compliance-monitor"],
+                "cascade_services": ["settlement-processor"],
+                "description": "Audit trail event sequence numbers have gaps indicating lost events",
+                "error_message": "[AUDIT] AUDIT-SEQ-GAP: stream={audit_stream} expected={expected_seq} received={last_seq} gap_count={gap_count}",
                 "stack_trace": (
-                    "=== MATCHING ENGINE PERF DUMP ===\n"
-                    "order_id={order_id}  partition={partition_id}\n"
-                    "phase              elapsed_us   pct\n"
-                    "order_decode          12         0.1%\n"
-                    "pre_trade_risk       340         2.7%\n"
-                    "book_lookup           45         0.4%\n"
-                    "price_time_match   11280        89.2%  <<< BOTTLENECK\n"
-                    "fill_generation      310         2.5%\n"
-                    "post_trade_pub       650         5.1%\n"
-                    "TOTAL             {latency_us}us  SLA={sla_us}us  BREACH=true\n"
-                    "queue_depth=14832  lock_contention_ns=8420  cpu_affinity=core-7\n"
-                    "ACTION: throttle_inbound=true  alert=ME-LATENCY-SLA"
+                    "=== AUDIT PIPELINE STATUS ===\n"
+                    "stream={audit_stream}  partition=0\n"
+                    "--- SEQUENCE ANALYSIS ---\n"
+                    "  last_committed_seq   {last_seq}\n"
+                    "  expected_next_seq    {expected_seq}\n"
+                    "  gap_size             {gap_count} events\n"
+                    "  gap_duration         ~4.2s\n"
+                    "--- PIPELINE HEALTH ---\n"
+                    "  kafka_consumer_lag   2,340\n"
+                    "  write_ahead_log      BEHIND\n"
+                    "  hash_chain           BROKEN (gap invalidates chain from seq {expected_seq})\n"
+                    "  immutability_proof   INVALID\n"
+                    "--- RECOVERY ---\n"
+                    "  replay_source=kafka  replay_from={expected_seq}  estimated_time=12s\n"
+                    "  reg_impact=SEC-17a4  audit_gap_report=REQUIRED\n"
+                    "ACTION: pause_pipeline=true  request_replay=true  alert=AUDIT-SEQ-GAP"
                 ),
             },
             3: {
@@ -591,32 +595,28 @@ class FinancialScenario(BaseScenario):
                 ),
             },
             16: {
-                "name": "Audit Log Sequence Gap",
-                "subsystem": "audit",
-                "vehicle_section": "audit_pipeline",
-                "error_type": "AUDIT-SEQ-GAP",
-                "sensor_type": "sequence_validator",
-                "affected_services": ["audit-logger", "compliance-monitor"],
-                "cascade_services": ["settlement-processor"],
-                "description": "Audit trail event sequence numbers have gaps indicating lost events",
-                "error_message": "[AUDIT] AUDIT-SEQ-GAP: stream={audit_stream} expected={expected_seq} received={last_seq} gap_count={gap_count}",
+                "name": "Matching Engine Latency",
+                "subsystem": "trade_execution",
+                "vehicle_section": "matching_core",
+                "error_type": "ME-LATENCY-SLA",
+                "sensor_type": "latency_monitor",
+                "affected_services": ["matching-engine", "order-gateway"],
+                "cascade_services": ["risk-calculator", "settlement-processor"],
+                "description": "Matching engine order processing latency exceeds SLA threshold",
+                "error_message": "[ME] ME-LATENCY-SLA: order={order_id} latency_us={latency_us} sla_us={sla_us} partition={partition_id}",
                 "stack_trace": (
-                    "=== AUDIT PIPELINE STATUS ===\n"
-                    "stream={audit_stream}  partition=0\n"
-                    "--- SEQUENCE ANALYSIS ---\n"
-                    "  last_committed_seq   {last_seq}\n"
-                    "  expected_next_seq    {expected_seq}\n"
-                    "  gap_size             {gap_count} events\n"
-                    "  gap_duration         ~4.2s\n"
-                    "--- PIPELINE HEALTH ---\n"
-                    "  kafka_consumer_lag   2,340\n"
-                    "  write_ahead_log      BEHIND\n"
-                    "  hash_chain           BROKEN (gap invalidates chain from seq {expected_seq})\n"
-                    "  immutability_proof   INVALID\n"
-                    "--- RECOVERY ---\n"
-                    "  replay_source=kafka  replay_from={expected_seq}  estimated_time=12s\n"
-                    "  reg_impact=SEC-17a4  audit_gap_report=REQUIRED\n"
-                    "ACTION: pause_pipeline=true  request_replay=true  alert=AUDIT-SEQ-GAP"
+                    "=== MATCHING ENGINE PERF DUMP ===\n"
+                    "order_id={order_id}  partition={partition_id}\n"
+                    "phase              elapsed_us   pct\n"
+                    "order_decode          12         0.1%\n"
+                    "pre_trade_risk       340         2.7%\n"
+                    "book_lookup           45         0.4%\n"
+                    "price_time_match   11280        89.2%  <<< BOTTLENECK\n"
+                    "fill_generation      310         2.5%\n"
+                    "post_trade_pub       650         5.1%\n"
+                    "TOTAL             {latency_us}us  SLA={sla_us}us  BREACH=true\n"
+                    "queue_depth=14832  lock_contention_ns=8420  cpu_affinity=core-7\n"
+                    "ACTION: throttle_inbound=true  alert=ME-LATENCY-SLA"
                 ),
             },
             17: {
