@@ -308,38 +308,37 @@ class EcommerceScenario(BaseScenario):
                 ),
             },
             4: {
-                "name": "Recommendation Engine OOM",
-                "subsystem": "personalization",
-                "vehicle_section": "ml_inference",
-                "error_type": "RECO-ENGINE-OOM",
-                "sensor_type": "heap_memory",
-                "affected_services": ["recommendation-engine"],
-                "cascade_services": ["storefront-gateway", "product-catalog"],
-                "description": "Recommendation model inference process running out of heap memory, crashing and causing fallback to non-personalized results",
+                "name": "Warehouse Capacity Alert",
+                "subsystem": "fulfillment",
+                "vehicle_section": "warehouse_management",
+                "error_type": "WAREHOUSE-CAPACITY-ALERT",
+                "sensor_type": "storage_utilization",
+                "affected_services": ["fulfillment-orchestrator", "inventory-service"],
+                "cascade_services": ["order-management"],
+                "description": "Warehouse storage capacity approaching critical threshold — new inbound shipments being rejected, causing supply chain delays",
                 "investigation_notes": (
-                    "1. Check recommendation-engine logs for RECO-ENGINE-OOM — heap_used_mb={heap_used_mb} vs heap_max_mb={heap_max_mb} gives the margin.\n"
-                    "2. The model embedding cache is likely bloated — check cache_size_mb metric. A cold-start after a pod restart causes aggressive cache backfill.\n"
-                    "3. Review the model version: v{model_version} may have a larger embedding dimension than the previous version, requiring more heap.\n"
-                    "4. Check GC log — G1GC full GC pauses above 2s indicate the heap is too small for current traffic; target 75% heap utilization.\n"
-                    "5. Immediate mitigation: reduce batch_size from {batch_size} to half — this trades throughput for stability under memory pressure.\n"
-                    "6. Scale the recommendation-engine horizontally (add pods) and reduce per-instance model cache size to distribute memory load."
+                    "1. Check fulfillment-orchestrator logs for WAREHOUSE-CAPACITY-ALERT — capacity={capacity_used_pct}% at {warehouse_id}.\n"
+                    "2. Identify the capacity drivers: check inventory.items_tracked metric by category — overstocked SKUs consuming disproportionate space.\n"
+                    "3. Review inbound shipment schedule: if {inbound_units} units arriving in next 48hrs and capacity is already at {capacity_used_pct}%, overflow is imminent.\n"
+                    "4. Prioritize outbound to free space: run velocity analysis on slow-moving SKUs ({slow_sku_count} items with 0 sales in 30 days) for clearance.\n"
+                    "5. Activate overflow warehouse at {overflow_facility} — reroute inbound from top {slow_sku_categories} categories to free primary warehouse capacity.\n"
+                    "6. Alert merchandising team: if capacity remains critical, new product listings should be paused until space is freed."
                 ),
-                "remediation_action": "scale_recommendation_engine",
+                "remediation_action": "rebalance_warehouse_capacity",
                 "error_message": (
-                    "[RecommendationEngine] RECO-ENGINE-OOM: heap_used={heap_used_mb}MB "
-                    "heap_max={heap_max_mb}MB model_version=v{model_version} "
-                    "batch_size={batch_size} cache_size={cache_size_mb}MB gc_pause_ms={gc_pause_ms}"
+                    "[FulfillmentOrchestrator] WAREHOUSE-CAPACITY-ALERT: warehouse={warehouse_id} "
+                    "capacity={capacity_used_pct}% ({capacity_used_sqft}/{capacity_total_sqft} sqft) "
+                    "inbound_units={inbound_units} slow_skus={slow_sku_count}"
                 ),
                 "stack_trace": (
-                    "java.lang.OutOfMemoryError: RECO-ENGINE-OOM Java heap space\n"
-                    "\tat com.ecommerce.reco.EmbeddingCache.load(EmbeddingCache.java:178)\n"
-                    "\tat com.ecommerce.reco.ModelInference.predict(ModelInference.java:234)\n"
-                    "\tat com.ecommerce.reco.RecommendationService.getRecs(RecommendationService.java:112)\n"
-                    "Heap used:    {heap_used_mb}MB / {heap_max_mb}MB\n"
-                    "Model:        v{model_version}\n"
-                    "Batch size:   {batch_size}\n"
-                    "Cache size:   {cache_size_mb}MB\n"
-                    "GC pause:     {gc_pause_ms}ms"
+                    "com.ecommerce.fulfillment.CapacityException: WAREHOUSE-CAPACITY-ALERT\n"
+                    "\tat com.ecommerce.fulfillment.WarehouseManager.checkCapacity(id={warehouse_id})\n"
+                    "\tat com.ecommerce.fulfillment.FulfillmentOrchestrator.receiveInbound(asn={asn_id})\n"
+                    "Warehouse:         {warehouse_id}\n"
+                    "Capacity used:     {capacity_used_pct}% ({capacity_used_sqft}/{capacity_total_sqft} sqft)\n"
+                    "Inbound (48h):     {inbound_units} units\n"
+                    "Slow SKUs:         {slow_sku_count}\n"
+                    "Overflow facility: {overflow_facility}"
                 ),
             },
             5: {
@@ -693,6 +692,39 @@ class EcommerceScenario(BaseScenario):
                 ),
             },
             15: {
+                "name": "Catalog Price Sync Failure",
+                "subsystem": "catalog",
+                "vehicle_section": "pricing_engine",
+                "error_type": "CATALOG-PRICE-SYNC",
+                "sensor_type": "price_replication",
+                "affected_services": ["product-catalog", "inventory-service"],
+                "cascade_services": ["order-management"],
+                "description": "Product price updates failing to propagate from pricing engine to catalog and inventory — stale prices causing customer disputes",
+                "investigation_notes": (
+                    "1. Check product-catalog logs for CATALOG-PRICE-SYNC — failed_updates={failed_price_updates}/{total_price_updates} shows scope.\n"
+                    "2. Check the pricing event stream consumer: if the consumer is behind by {price_lag_events} events, prices are stale by {price_lag_min}min.\n"
+                    "3. Verify no schema mismatch in the pricing event format — a recently deployed pricing service may be emitting events in a new format.\n"
+                    "4. Cross-check: if displayed price differs from order-confirmed price by >{price_delta_threshold_pct}%, customer dispute risk is high.\n"
+                    "5. Run a forced sync: `catalog-cli sync-prices --source pricing-engine --batch-size 1000` to drain the backlog.\n"
+                    "6. Enable price validation at checkout: compare display price to real-time pricing API call — reject if delta exceeds tolerance."
+                ),
+                "remediation_action": "resync_catalog_prices",
+                "error_message": (
+                    "[ProductCatalog] CATALOG-PRICE-SYNC: failed_updates={failed_price_updates}/{total_price_updates} "
+                    "price_lag={price_lag_min}min consumer_lag={price_lag_events} "
+                    "affected_skus={affected_price_skus}"
+                ),
+                "stack_trace": (
+                    "com.ecommerce.catalog.PriceSyncException: CATALOG-PRICE-SYNC\n"
+                    "\tat com.ecommerce.catalog.PriceConsumer.applyUpdate(sku={sku_id})\n"
+                    "\tat com.ecommerce.catalog.CatalogService.syncPrices(batch={price_batch_id})\n"
+                    "Failed updates:    {failed_price_updates}/{total_price_updates}\n"
+                    "Price lag:         {price_lag_min}min\n"
+                    "Consumer lag:      {price_lag_events} events\n"
+                    "Affected SKUs:     {affected_price_skus}"
+                ),
+            },
+            16: {
                 "name": "Storefront SSL Certificate Expiry",
                 "subsystem": "storefront",
                 "vehicle_section": "tls_termination",
@@ -726,39 +758,6 @@ class EcommerceScenario(BaseScenario):
                     "Issuer:           {cert_issuer}\n"
                     "SANs covered:     {cert_san_count}\n"
                     "Auto-renewal:     {auto_renewal_status}"
-                ),
-            },
-            16: {
-                "name": "Catalog Price Sync Failure",
-                "subsystem": "catalog",
-                "vehicle_section": "pricing_engine",
-                "error_type": "CATALOG-PRICE-SYNC",
-                "sensor_type": "price_replication",
-                "affected_services": ["product-catalog", "inventory-service"],
-                "cascade_services": ["order-management"],
-                "description": "Product price updates failing to propagate from pricing engine to catalog and inventory — stale prices causing customer disputes",
-                "investigation_notes": (
-                    "1. Check product-catalog logs for CATALOG-PRICE-SYNC — failed_updates={failed_price_updates}/{total_price_updates} shows scope.\n"
-                    "2. Check the pricing event stream consumer: if the consumer is behind by {price_lag_events} events, prices are stale by {price_lag_min}min.\n"
-                    "3. Verify no schema mismatch in the pricing event format — a recently deployed pricing service may be emitting events in a new format.\n"
-                    "4. Cross-check: if displayed price differs from order-confirmed price by >{price_delta_threshold_pct}%, customer dispute risk is high.\n"
-                    "5. Run a forced sync: `catalog-cli sync-prices --source pricing-engine --batch-size 1000` to drain the backlog.\n"
-                    "6. Enable price validation at checkout: compare display price to real-time pricing API call — reject if delta exceeds tolerance."
-                ),
-                "remediation_action": "resync_catalog_prices",
-                "error_message": (
-                    "[ProductCatalog] CATALOG-PRICE-SYNC: failed_updates={failed_price_updates}/{total_price_updates} "
-                    "price_lag={price_lag_min}min consumer_lag={price_lag_events} "
-                    "affected_skus={affected_price_skus}"
-                ),
-                "stack_trace": (
-                    "com.ecommerce.catalog.PriceSyncException: CATALOG-PRICE-SYNC\n"
-                    "\tat com.ecommerce.catalog.PriceConsumer.applyUpdate(sku={sku_id})\n"
-                    "\tat com.ecommerce.catalog.CatalogService.syncPrices(batch={price_batch_id})\n"
-                    "Failed updates:    {failed_price_updates}/{total_price_updates}\n"
-                    "Price lag:         {price_lag_min}min\n"
-                    "Consumer lag:      {price_lag_events} events\n"
-                    "Affected SKUs:     {affected_price_skus}"
                 ),
             },
             17: {
@@ -833,37 +832,38 @@ class EcommerceScenario(BaseScenario):
                 ),
             },
             19: {
-                "name": "Warehouse Capacity Alert",
-                "subsystem": "fulfillment",
-                "vehicle_section": "warehouse_management",
-                "error_type": "WAREHOUSE-CAPACITY-ALERT",
-                "sensor_type": "storage_utilization",
-                "affected_services": ["fulfillment-orchestrator", "inventory-service"],
-                "cascade_services": ["order-management"],
-                "description": "Warehouse storage capacity approaching critical threshold — new inbound shipments being rejected, causing supply chain delays",
+                "name": "Recommendation Engine OOM",
+                "subsystem": "personalization",
+                "vehicle_section": "ml_inference",
+                "error_type": "RECO-ENGINE-OOM",
+                "sensor_type": "heap_memory",
+                "affected_services": ["recommendation-engine"],
+                "cascade_services": ["storefront-gateway", "product-catalog"],
+                "description": "Recommendation model inference process running out of heap memory, crashing and causing fallback to non-personalized results",
                 "investigation_notes": (
-                    "1. Check fulfillment-orchestrator logs for WAREHOUSE-CAPACITY-ALERT — capacity={capacity_used_pct}% at {warehouse_id}.\n"
-                    "2. Identify the capacity drivers: check inventory.items_tracked metric by category — overstocked SKUs consuming disproportionate space.\n"
-                    "3. Review inbound shipment schedule: if {inbound_units} units arriving in next 48hrs and capacity is already at {capacity_used_pct}%, overflow is imminent.\n"
-                    "4. Prioritize outbound to free space: run velocity analysis on slow-moving SKUs ({slow_sku_count} items with 0 sales in 30 days) for clearance.\n"
-                    "5. Activate overflow warehouse at {overflow_facility} — reroute inbound from top {slow_sku_categories} categories to free primary warehouse capacity.\n"
-                    "6. Alert merchandising team: if capacity remains critical, new product listings should be paused until space is freed."
+                    "1. Check recommendation-engine logs for RECO-ENGINE-OOM — heap_used_mb={heap_used_mb} vs heap_max_mb={heap_max_mb} gives the margin.\n"
+                    "2. The model embedding cache is likely bloated — check cache_size_mb metric. A cold-start after a pod restart causes aggressive cache backfill.\n"
+                    "3. Review the model version: v{model_version} may have a larger embedding dimension than the previous version, requiring more heap.\n"
+                    "4. Check GC log — G1GC full GC pauses above 2s indicate the heap is too small for current traffic; target 75% heap utilization.\n"
+                    "5. Immediate mitigation: reduce batch_size from {batch_size} to half — this trades throughput for stability under memory pressure.\n"
+                    "6. Scale the recommendation-engine horizontally (add pods) and reduce per-instance model cache size to distribute memory load."
                 ),
-                "remediation_action": "rebalance_warehouse_capacity",
+                "remediation_action": "scale_recommendation_engine",
                 "error_message": (
-                    "[FulfillmentOrchestrator] WAREHOUSE-CAPACITY-ALERT: warehouse={warehouse_id} "
-                    "capacity={capacity_used_pct}% ({capacity_used_sqft}/{capacity_total_sqft} sqft) "
-                    "inbound_units={inbound_units} slow_skus={slow_sku_count}"
+                    "[RecommendationEngine] RECO-ENGINE-OOM: heap_used={heap_used_mb}MB "
+                    "heap_max={heap_max_mb}MB model_version=v{model_version} "
+                    "batch_size={batch_size} cache_size={cache_size_mb}MB gc_pause_ms={gc_pause_ms}"
                 ),
                 "stack_trace": (
-                    "com.ecommerce.fulfillment.CapacityException: WAREHOUSE-CAPACITY-ALERT\n"
-                    "\tat com.ecommerce.fulfillment.WarehouseManager.checkCapacity(id={warehouse_id})\n"
-                    "\tat com.ecommerce.fulfillment.FulfillmentOrchestrator.receiveInbound(asn={asn_id})\n"
-                    "Warehouse:         {warehouse_id}\n"
-                    "Capacity used:     {capacity_used_pct}% ({capacity_used_sqft}/{capacity_total_sqft} sqft)\n"
-                    "Inbound (48h):     {inbound_units} units\n"
-                    "Slow SKUs:         {slow_sku_count}\n"
-                    "Overflow facility: {overflow_facility}"
+                    "java.lang.OutOfMemoryError: RECO-ENGINE-OOM Java heap space\n"
+                    "\tat com.ecommerce.reco.EmbeddingCache.load(EmbeddingCache.java:178)\n"
+                    "\tat com.ecommerce.reco.ModelInference.predict(ModelInference.java:234)\n"
+                    "\tat com.ecommerce.reco.RecommendationService.getRecs(RecommendationService.java:112)\n"
+                    "Heap used:    {heap_used_mb}MB / {heap_max_mb}MB\n"
+                    "Model:        v{model_version}\n"
+                    "Batch size:   {batch_size}\n"
+                    "Cache size:   {cache_size_mb}MB\n"
+                    "GC pause:     {gc_pause_ms}ms"
                 ),
             },
             20: {
@@ -1344,10 +1344,10 @@ class EcommerceScenario(BaseScenario):
                 "storefront-gateway": {"storefront.search_zero_results_pct": round(rng.uniform(20, 60), 1), "storefront.search_fallback_active": True},
                 "recommendation-engine": {"reco.catalog_data_stale": True, "reco.fallback_to_trending": True},
             },
-            4: {  # Recommendation Engine OOM
-                "recommendation-engine": {"reco.heap_utilization_pct": round(rng.uniform(90, 99), 1), "reco.gc_pause_ms": rng.randint(2000, 8000), "reco.serving_fallback": "trending"},
-                "storefront-gateway": {"storefront.personalization_disabled": True, "storefront.generic_reco_serving": True},
-                "product-catalog": {"catalog.reco_lookup_errors": rng.randint(100, 1000), "catalog.featured_fallback_active": True},
+            4: {  # Warehouse Capacity
+                "fulfillment-orchestrator": {"fulfillment.warehouse_capacity_pct": round(rng.uniform(88, 99), 1), "fulfillment.inbound_rejected_count": rng.randint(10, 200)},
+                "inventory-service": {"inventory.overflow_sku_count": rng.randint(100, 5000), "inventory.receiving_paused_categories": rng.randint(1, 5)},
+                "order-management": {"order.new_listing_hold": True, "order.extended_delivery_estimate": True},
             },
             5: {  # Checkout Session Storm
                 "storefront-gateway": {"storefront.session_pool_utilization_pct": round(rng.uniform(90, 100), 1), "storefront.new_sessions_rejected": rng.randint(100, 2000)},
@@ -1401,15 +1401,15 @@ class EcommerceScenario(BaseScenario):
                 "ad-platform": {"ads.budget_optimization_stale": True, "ads.bid_using_lag_min": rng.randint(10, 120)},
                 "order-management": {"order.gmv_dashboard_stale_min": rng.randint(5, 60), "order.realtime_reporting_delayed": True},
             },
-            15: {  # SSL Cert Expiry
-                "storefront-gateway": {"tls.cert_days_remaining": rng.randint(0, 7), "tls.browser_warning_triggered": True},
-                "order-management": {"order.https_errors_count": rng.randint(10, 500), "order.mixed_content_warnings": rng.randint(5, 50)},
-                "payment-processor": {"payment.pci_tls_validation_failed": True, "payment.secure_channel_degraded": True},
-            },
-            16: {  # Catalog Price Sync
+            15: {  # Catalog Price Sync
                 "product-catalog": {"catalog.stale_price_skus": rng.randint(100, 10000), "catalog.price_lag_min": rng.randint(5, 120)},
                 "inventory-service": {"inventory.price_mismatch_count": rng.randint(50, 5000), "inventory.sync_consumer_behind": True},
                 "order-management": {"order.price_dispute_risk_count": rng.randint(10, 200), "order.price_validation_failures": rng.randint(5, 100)},
+            },
+            16: {  # SSL Cert Expiry
+                "storefront-gateway": {"tls.cert_days_remaining": rng.randint(0, 7), "tls.browser_warning_triggered": True},
+                "order-management": {"order.https_errors_count": rng.randint(10, 500), "order.mixed_content_warnings": rng.randint(5, 50)},
+                "payment-processor": {"payment.pci_tls_validation_failed": True, "payment.secure_channel_degraded": True},
             },
             17: {  # Ad Budget Cap
                 "ad-platform": {"ads.budget_exhausted": True, "ads.serving_stopped": True, "ads.hours_remaining_today": rng.randint(1, 8)},
@@ -1419,10 +1419,10 @@ class EcommerceScenario(BaseScenario):
                 "payment-processor": {"payment.expired_token_count": rng.randint(100, 10000), "payment.subscription_failure_rate_pct": round(rng.uniform(5, 40), 1)},
                 "order-management": {"order.subscription_renewal_failures": rng.randint(50, 5000), "order.churn_risk_count": rng.randint(10, 1000)},
             },
-            19: {  # Warehouse Capacity
-                "fulfillment-orchestrator": {"fulfillment.warehouse_capacity_pct": round(rng.uniform(88, 99), 1), "fulfillment.inbound_rejected_count": rng.randint(10, 200)},
-                "inventory-service": {"inventory.overflow_sku_count": rng.randint(100, 5000), "inventory.receiving_paused_categories": rng.randint(1, 5)},
-                "order-management": {"order.new_listing_hold": True, "order.extended_delivery_estimate": True},
+            19: {  # Recommendation Engine OOM
+                "recommendation-engine": {"reco.heap_utilization_pct": round(rng.uniform(90, 99), 1), "reco.gc_pause_ms": rng.randint(2000, 8000), "reco.serving_fallback": "trending"},
+                "storefront-gateway": {"storefront.personalization_disabled": True, "storefront.generic_reco_serving": True},
+                "product-catalog": {"catalog.reco_lookup_errors": rng.randint(100, 1000), "catalog.featured_fallback_active": True},
             },
             20: {  # Reco Cache Eviction
                 "recommendation-engine": {"reco.cache_hit_rate_pct": round(rng.uniform(2, 20), 1), "reco.cold_inference_p99_ms": rng.randint(3000, 15000)},
@@ -1466,12 +1466,15 @@ class EcommerceScenario(BaseScenario):
                 "snapshot_age_min": rng.randint(60, 480),
             },
             4: {
-                "heap_used_mb": rng.randint(7500, 9800),
-                "heap_max_mb": 10240,
-                "model_version": rng.randint(7, 10),
-                "batch_size": rng.randint(64, 512),
-                "cache_size_mb": rng.randint(4000, 8000),
-                "gc_pause_ms": rng.randint(2000, 8000),
+                "warehouse_id": rng.choice(["WH-US-NJ-01", "WH-US-OH-02", "WH-US-TX-03"]),
+                "capacity_used_pct": round(rng.uniform(88, 98), 1),
+                "capacity_used_sqft": rng.randint(880000, 980000),
+                "capacity_total_sqft": 1000000,
+                "inbound_units": rng.randint(5000, 50000),
+                "slow_sku_count": rng.randint(500, 10000),
+                "slow_sku_categories": rng.choice(["home-decor", "seasonal", "electronics-accessories"]),
+                "overflow_facility": rng.choice(["WH-US-PA-OVERFLOW", "WH-US-IN-OVERFLOW"]),
+                "asn_id": f"ASN-{rng.randint(10000, 99999)}",
             },
             5: {
                 "active_sessions": rng.randint(48000, 55000),
@@ -1579,14 +1582,6 @@ class EcommerceScenario(BaseScenario):
                 "eta_drain_min": rng.randint(10, 60),
             },
             15: {
-                "cert_domain": rng.choice(["shop.example.com", "checkout.example.com", "api.example.com"]),
-                "cert_serial": f"{rng.randint(10000000, 99999999):X}",
-                "cert_days_remaining": rng.randint(0, 7),
-                "cert_issuer": rng.choice(["Let's Encrypt", "DigiCert", "Comodo"]),
-                "cert_san_count": rng.randint(3, 15),
-                "auto_renewal_status": rng.choice(["FAILED", "NOT_CONFIGURED", "EXPIRED"]),
-            },
-            16: {
                 "failed_price_updates": rng.randint(100, 5000),
                 "total_price_updates": rng.randint(5000, 50000),
                 "price_lag_min": rng.randint(5, 120),
@@ -1595,6 +1590,14 @@ class EcommerceScenario(BaseScenario):
                 "sku_id": f"SKU-{rng.randint(100000, 999999)}",
                 "price_batch_id": f"PRICE-BATCH-{rng.randint(1000, 9999)}",
                 "price_delta_threshold_pct": 5.0,
+            },
+            16: {
+                "cert_domain": rng.choice(["shop.example.com", "checkout.example.com", "api.example.com"]),
+                "cert_serial": f"{rng.randint(10000000, 99999999):X}",
+                "cert_days_remaining": rng.randint(0, 7),
+                "cert_issuer": rng.choice(["Let's Encrypt", "DigiCert", "Comodo"]),
+                "cert_san_count": rng.randint(3, 15),
+                "auto_renewal_status": rng.choice(["FAILED", "NOT_CONFIGURED", "EXPIRED"]),
             },
             17: {
                 "campaign_id": f"CAMP-{rng.randint(1000, 9999)}",
@@ -1616,15 +1619,12 @@ class EcommerceScenario(BaseScenario):
                 "subscription_id": f"SUB-{rng.randint(100000, 999999)}",
             },
             19: {
-                "warehouse_id": rng.choice(["WH-US-NJ-01", "WH-US-OH-02", "WH-US-TX-03"]),
-                "capacity_used_pct": round(rng.uniform(88, 98), 1),
-                "capacity_used_sqft": rng.randint(880000, 980000),
-                "capacity_total_sqft": 1000000,
-                "inbound_units": rng.randint(5000, 50000),
-                "slow_sku_count": rng.randint(500, 10000),
-                "slow_sku_categories": rng.choice(["home-decor", "seasonal", "electronics-accessories"]),
-                "overflow_facility": rng.choice(["WH-US-PA-OVERFLOW", "WH-US-IN-OVERFLOW"]),
-                "asn_id": f"ASN-{rng.randint(10000, 99999)}",
+                "heap_used_mb": rng.randint(7500, 9800),
+                "heap_max_mb": 10240,
+                "model_version": rng.randint(7, 10),
+                "batch_size": rng.randint(64, 512),
+                "cache_size_mb": rng.randint(4000, 8000),
+                "gc_pause_ms": rng.randint(2000, 8000),
             },
             20: {
                 "cache_hit_rate_pct": round(rng.uniform(2, 15), 1),
@@ -1644,7 +1644,7 @@ class EcommerceScenario(BaseScenario):
             1: ("payment.gateway_degraded", True),
             2: ("ads.serving_degraded", True),
             3: ("catalog.index_unhealthy", True),
-            4: ("reco.engine_degraded", True),
+            4: ("fulfillment.warehouse_capacity_critical", True),
             5: ("storefront.session_pressure", True),
             6: ("payment.fraud_model_misfiring", True),
             7: ("inventory.sync_lagging", True),
@@ -1655,11 +1655,11 @@ class EcommerceScenario(BaseScenario):
             12: ("orders.abandonment_elevated", True),
             13: ("reco.model_drifting", True),
             14: ("analytics.pipeline_lagging", True),
-            15: ("storefront.cert_expiring", True),
-            16: ("catalog.prices_stale", True),
+            15: ("catalog.prices_stale", True),
+            16: ("storefront.cert_expiring", True),
             17: ("ads.budget_exhausted", True),
             18: ("payment.tokens_expiring", True),
-            19: ("fulfillment.warehouse_capacity_critical", True),
+            19: ("reco.engine_degraded", True),
             20: ("reco.cache_cold", True),
         }
         if channel in correlations:
