@@ -41,7 +41,7 @@ class GCPScenario(BaseScenario):
 
     @property
     def sort_order(self) -> int:
-        return 7
+        return 9
 
     @property
     def executive_kpi_emitter_service_name(self) -> str:
