@@ -15,7 +15,9 @@ _SECURITY_DIR = Path(__file__).parent / "security"
 
 class PlatformMixin:
 
-    def _configure_platform_settings(self, client: httpx.Client, notify: ProgressCallback):
+    def _configure_platform_settings(
+        self, client: httpx.Client, notify: ProgressCallback
+    ):
         """Enable wired streams, significant events, agent builder, and AI docs."""
         step = self._step(4)
         step.status = "running"
@@ -45,7 +47,9 @@ class PlatformMixin:
             resp = client.post(
                 f"{self.kibana_url}/api/kibana/settings",
                 headers=_kibana_headers(self.api_key),
-                json={"changes": {"observability:streamsEnableSignificantEvents": True}},
+                json={
+                    "changes": {"observability:streamsEnableSignificantEvents": True}
+                },
             )
             if resp.status_code < 300:
                 configured.append("significant events")
@@ -54,12 +58,18 @@ class PlatformMixin:
                 resp2 = client.post(
                     f"{self.kibana_url}/internal/kibana/settings",
                     headers=_kibana_headers(self.api_key),
-                    json={"changes": {"observability:streamsEnableSignificantEvents": True}},
+                    json={
+                        "changes": {
+                            "observability:streamsEnableSignificantEvents": True
+                        }
+                    },
                 )
                 if resp2.status_code < 300:
                     configured.append("significant events")
                 else:
-                    errors.append(f"significant events (HTTP {resp.status_code}/{resp2.status_code})")
+                    errors.append(
+                        f"significant events (HTTP {resp.status_code}/{resp2.status_code})"
+                    )
         except Exception as exc:
             errors.append(f"significant events ({exc})")
 
@@ -82,7 +92,10 @@ class PlatformMixin:
             resp = client.post(
                 f"{self.kibana_url}/internal/product_doc_base/install",
                 headers=_kibana_headers(self.api_key),
-                json={"inferenceId": ".elser-2-elasticsearch", "resourceType": "product_doc"},
+                json={
+                    "inferenceId": ".elser-2-elasticsearch",
+                    "resourceType": "product_doc",
+                },
             )
             if resp.status_code < 300:
                 configured.append("AI docs")
@@ -105,7 +118,31 @@ class PlatformMixin:
         except Exception as exc:
             errors.append(f"workflows UI ({exc})")
 
-        # 6 & 7. Create viewer-custom role and guest user (only when KIBANA_RO_PASSWORD is set)
+        # 6. Hide Kibana new-tab announcement popup (9.4.0+ moved this to a global setting)
+        try:
+            resp = client.post(
+                f"{self.kibana_url}/api/kibana/settings",
+                headers=_kibana_headers(self.api_key),
+                json={"changes": {"hideAnnouncements": True}},
+            )
+            if resp.status_code < 300:
+                configured.append("hide announcements")
+            else:
+                resp2 = client.post(
+                    f"{self.kibana_url}/internal/kibana/settings",
+                    headers=_kibana_headers(self.api_key),
+                    json={"changes": {"hideAnnouncements": True}},
+                )
+                if resp2.status_code < 300:
+                    configured.append("hide announcements")
+                else:
+                    errors.append(
+                        f"hide announcements (HTTP {resp.status_code}/{resp2.status_code})"
+                    )
+        except Exception as exc:
+            errors.append(f"hide announcements ({exc})")
+
+        # 7 & 8. Create viewer-custom role and guest user (only when KIBANA_RO_PASSWORD is set)
         ro_password = os.getenv("KIBANA_RO_PASSWORD", "").strip()
         if ro_password:
             try:
