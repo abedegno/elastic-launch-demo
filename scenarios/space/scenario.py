@@ -1160,9 +1160,7 @@ class SpaceScenario(BaseScenario):
             font_family="'JetBrains Mono', 'Fira Code', monospace",
             font_mono="'JetBrains Mono', 'Fira Code', monospace",
             scanline_effect=True,
-            dashboard_title="Mission Control",
             chaos_title="Chaos Controller",
-            landing_title="NOVA-7 Mission Control",
             service_label="System",
             channel_label="Channel",
         )

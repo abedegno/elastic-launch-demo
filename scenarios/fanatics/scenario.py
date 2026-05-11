@@ -1227,9 +1227,7 @@ class FanaticsScenario(BaseScenario):
             status_info="#58a6ff",
             font_family="'Inter', system-ui, sans-serif",
             grid_background=True,
-            dashboard_title="Network Operations Center (NOC)",
             chaos_title="Incident Simulator",
-            landing_title="Fanatics Infrastructure Operations",
         )
 
     @property

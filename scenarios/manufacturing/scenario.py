@@ -1175,9 +1175,7 @@ class ManufacturingScenario(BaseScenario):
             status_info="#58a6ff",
             font_family="'Inter', system-ui, sans-serif",
             font_mono="'JetBrains Mono', 'Fira Code', monospace",
-            dashboard_title="Production Operations Center",
             chaos_title="Plant Incident Simulator",
-            landing_title="Manufacturing Operations",
             service_label="System",
             channel_label="Incident",
         )

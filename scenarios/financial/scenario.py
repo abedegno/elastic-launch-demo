@@ -974,9 +974,7 @@ class FinancialScenario(BaseScenario):
             status_critical="#ff0000",
             font_family="'Bloomberg Terminal', 'Consolas', monospace",
             font_mono="'Bloomberg Terminal', 'Consolas', monospace",
-            dashboard_title="Trading Operations Center",
             chaos_title="Market Disruption Simulator",
-            landing_title="Trading Operations Center",
             service_label="Service",
             channel_label="Channel",
         )

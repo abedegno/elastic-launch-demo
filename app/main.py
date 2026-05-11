@@ -8,7 +8,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -205,19 +205,9 @@ app = FastAPI(
 # ── Static file mounts ─────────────────────────────────────────────────────
 _base = os.path.dirname(__file__)
 app.mount(
-    "/dashboard/static",
-    StaticFiles(directory=os.path.join(_base, "dashboard", "static")),
-    name="dashboard-static",
-)
-app.mount(
     "/chaos/static",
     StaticFiles(directory=os.path.join(_base, "chaos_ui", "static")),
     name="chaos-static",
-)
-app.mount(
-    "/landing/static",
-    StaticFiles(directory=os.path.join(_base, "landing", "static")),
-    name="landing-static",
 )
 app.mount(
     "/selector/static",
@@ -298,9 +288,7 @@ body {{ font-family: {theme.font_family}; }}"""
         "SCENARIO_ID_PLACEHOLDER": scenario.scenario_id,
         "NAMESPACE_PLACEHOLDER": scenario.namespace,
         "MISSION_ID_PLACEHOLDER": mission_id,
-        "DASHBOARD_TITLE_PLACEHOLDER": theme.dashboard_title,
         "CHAOS_TITLE_PLACEHOLDER": theme.chaos_title,
-        "LANDING_TITLE_PLACEHOLDER": theme.landing_title,
         "KIBANA_URL_PLACEHOLDER": kibana_display,
         "CHANNEL_TIMEOUT_PLACEHOLDER": str(CHANNEL_TIMEOUT),
         "REVENUE_DASHBOARD_CARD_PLACEHOLDER": revenue_dashboard_card,
@@ -371,23 +359,8 @@ def _derive_elastic_url(kibana_url: str, api_key: str, explicit: str = "") -> st
 async def selector_page():
     """Scenario selector — choose industry vertical and connect."""
     path = os.path.join(_base, "selector", "static", "index.html")
-    if os.path.exists(path):
-        with open(path) as f:
-            return HTMLResponse(content=f.read())
-    # Fallback to legacy landing if selector not yet built
-    return await landing_page()
-
-
-# ── Per-Scenario Landing Page ─────────────────────────────────────────────────
-
-
-@app.get("/home", response_class=HTMLResponse)
-async def landing_page(deployment_id: Optional[str] = None):
-    """Scenario-specific landing page with themed links."""
-    path = os.path.join(_base, "landing", "static", "index.html")
     with open(path) as f:
-        html = f.read()
-    return HTMLResponse(content=_inject_theme(html, deployment_id))
+        return HTMLResponse(content=f.read())
 
 
 # ── Health ──────────────────────────────────────────────────────────────────
@@ -401,31 +374,6 @@ async def health():
         "deployments": len(instances),
         "scenarios": [dep_id for dep_id in instances],
     }
-
-
-# ── Dashboard ───────────────────────────────────────────────────────────────
-
-
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page(deployment_id: Optional[str] = None):
-    path = os.path.join(_base, "dashboard", "static", "index.html")
-    with open(path) as f:
-        html = f.read()
-    return HTMLResponse(content=_inject_theme(html, deployment_id))
-
-
-@app.websocket("/ws/dashboard")
-async def ws_dashboard(websocket: WebSocket):
-    inst = _get_instance()
-    if not inst:
-        await websocket.close(1000)
-        return
-    await inst.dashboard_ws.connect(websocket)
-    try:
-        while True:
-            data = await websocket.receive_text()
-    except WebSocketDisconnect:
-        inst.dashboard_ws.disconnect(websocket)
 
 
 # ── Chaos Controller UI ────────────────────────────────────────────────────
@@ -484,9 +432,7 @@ async def current_scenario(deployment_id: Optional[str] = None):
             "status_nominal": theme.status_nominal,
             "status_warning": theme.status_warning,
             "status_critical": theme.status_critical,
-            "dashboard_title": theme.dashboard_title,
             "chaos_title": theme.chaos_title,
-            "landing_title": theme.landing_title,
             "font_family": theme.font_family,
             "font_mono": theme.font_mono,
             "scanline_effect": theme.scanline_effect,
@@ -573,10 +519,6 @@ async def chaos_trigger(body: dict):
         user_email,
         session_id=session_id,
     )
-    if inst.dashboard_ws:
-        await inst.dashboard_ws.broadcast_status(
-            inst.chaos_controller, inst.service_manager
-        )
     return result
 
 
@@ -592,10 +534,6 @@ async def chaos_resolve(body: dict):
     result = inst.chaos_controller.resolve(channel, session_id=session_id, user_email=user_email)
     if result.get("error") == "session_mismatch":
         return JSONResponse(status_code=403, content=result)
-    if inst.dashboard_ws:
-        await inst.dashboard_ws.broadcast_status(
-            inst.chaos_controller, inst.service_manager
-        )
     return result
 
 
@@ -717,10 +655,6 @@ async def remediate_channel(channel: int, deployment_id: Optional[str] = None):
     if not inst:
         return JSONResponse(status_code=404, content={"error": "No active deployment"})
     result = inst.chaos_controller.resolve(channel, force=True)
-    if inst.dashboard_ws:
-        await inst.dashboard_ws.broadcast_status(
-            inst.chaos_controller, inst.service_manager
-        )
     return {"action": "remediated", "channel": channel, **result}
 
 

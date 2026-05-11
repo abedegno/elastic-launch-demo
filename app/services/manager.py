@@ -25,12 +25,10 @@ class ServiceManager:
     def __init__(
         self,
         chaos_controller,
-        dashboard_ws=None,
         ctx=None,
         otlp_client: OTLPClient | None = None,
     ):
         self.chaos_controller = chaos_controller
-        self.dashboard_ws = dashboard_ws
         self._ctx = ctx  # ScenarioContext or None
         self.otlp = otlp_client or OTLPClient()
         self.es_bulk = ESBulkClient()

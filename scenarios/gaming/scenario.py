@@ -1407,9 +1407,7 @@ class GamingScenario(BaseScenario):
             font_family="'Inter', system-ui, sans-serif",
             glow_effect=True,
             gradient_accent="linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
-            dashboard_title="Live Ops Command Center",
             chaos_title="Chaos Engineering Console",
-            landing_title="Live Ops Command Center",
             service_label="Service",
             channel_label="Channel",
         )

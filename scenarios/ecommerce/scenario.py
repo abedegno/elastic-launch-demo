@@ -1193,9 +1193,7 @@ class EcommerceScenario(BaseScenario):
             status_info="#3b82f6",
             font_family="'Inter', system-ui, sans-serif",
             grid_background=True,
-            dashboard_title="Commerce Operations Center",
             chaos_title="Incident Simulator",
-            landing_title="Global Commerce Platform",
         )
 
     @property

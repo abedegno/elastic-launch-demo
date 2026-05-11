@@ -37,9 +37,7 @@ class UITheme:
     gradient_accent: str = ""  # CSS gradient for accent areas
 
     # Terminology
-    dashboard_title: str = "Operations Dashboard"
     chaos_title: str = "Incident Simulator"
-    landing_title: str = "Control Center"
     service_label: str = "Service"  # "Service", "System", "Module"
     channel_label: str = "Channel"  # "Channel", "Scenario", "Incident"
 

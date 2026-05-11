@@ -1338,9 +1338,7 @@ class BankingScenario(BaseScenario):
             status_info="#4da6e8",
             font_family="'Inter', 'Segoe UI', system-ui, sans-serif",
             font_mono="'JetBrains Mono', 'Fira Code', monospace",
-            dashboard_title="Member Services Operations Center",
             chaos_title="Incident Simulator",
-            landing_title="Retail Banking Platform",
             service_label="Service",
             channel_label="Channel",
         )

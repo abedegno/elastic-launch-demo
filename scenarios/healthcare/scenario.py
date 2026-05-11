@@ -1207,9 +1207,7 @@ class HealthcareScenario(BaseScenario):
             status_info="#1565c0",
             font_family="'Inter', system-ui, sans-serif",
             font_mono="'JetBrains Mono', 'Fira Code', monospace",
-            dashboard_title="Clinical Systems Dashboard",
             chaos_title="System Disruption Simulator",
-            landing_title="Clinical Systems Operations",
             service_label="Service",
             channel_label="Channel",
         )

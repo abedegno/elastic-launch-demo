@@ -793,11 +793,6 @@
             apiKey = document.getElementById('api-key').value.trim();
             esUrl = document.getElementById('es-url').value.trim() || undefined;
             otlpUrl = document.getElementById('otlp-url').value.trim() || undefined;
-
-            if (!kibanaUrl && !apiKey) {
-                window.location.href = '/home?deployment_id=' + selectedScenario;
-                return;
-            }
         }
 
         launchBtn.disabled = true;

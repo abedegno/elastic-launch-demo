@@ -1374,9 +1374,7 @@ class GCPScenario(BaseScenario):
             status_info="#4285F4",          # Google Blue
             font_family="'Google Sans', 'Inter', system-ui, sans-serif",
             grid_background=True,
-            dashboard_title="Network Operations Center",
             chaos_title="Incident Simulator",
-            landing_title="Google Cloud Network Operations",
         )
 
     @property
