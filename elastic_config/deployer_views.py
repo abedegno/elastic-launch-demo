@@ -17,12 +17,30 @@ class DataViewsMixin:
         notify(self.progress)
 
         views = [
-            # Custom view for exec dashboard panels (broad match, no hyphen)
+            # Unified scenario logs view — exec dashboard panels query through
+            # this. Includes both the OTel and ECS wired-stream partitions so
+            # cross-source queries (e.g. AI Assistant investigations) work.
             {
                 "data_view": {
                     "id": f"logs.otel.{self.ns}",
-                    "title": f"logs.otel.{self.ns},logs.otel.{self.ns}.*,logs-*",
+                    "title": (
+                        f"logs.otel.{self.ns},logs.otel.{self.ns}.*,"
+                        f"logs.ecs.{self.ns},logs.ecs.{self.ns}.*,"
+                        "logs-*"
+                    ),
                     "name": f"{self.scenario.scenario_name} Logs",
+                    "timeFieldName": "@timestamp",
+                },
+                "override": True,
+            },
+            # Dedicated ECS partition view — drives the "create a dashboard
+            # from this index" Agent Builder skill demo. The visualization
+            # skill resolves `logs.ecs.{ns}` to this data view.
+            {
+                "data_view": {
+                    "id": f"logs.ecs.{self.ns}",
+                    "title": f"logs.ecs.{self.ns},logs.ecs.{self.ns}.*",
+                    "name": f"{self.scenario.scenario_name} Logs (ECS)",
                     "timeFieldName": "@timestamp",
                 },
                 "override": True,

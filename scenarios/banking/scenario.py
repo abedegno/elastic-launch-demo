@@ -44,6 +44,23 @@ class BankingScenario(BaseScenario):
         return 6
 
     @property
+    def raw_log_profile(self) -> dict[str, Any]:
+        return {
+            "service_name": "banking-gateway",
+            "user_id_prefix": "acct",
+            "tier_field": "account_tier",
+            "tier_values": [("standard", 70), ("premier", 22), ("private", 8)],
+            "country_weights": {"US": 50, "GB": 15, "DE": 8, "FR": 5, "CA": 10, "AU": 5, "SG": 4, "JP": 3},
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "paths": [
+                "/api/v1/accounts", "/api/v1/transfers", "/api/v1/cards",
+                "/api/v1/loans", "/api/v1/payees", "/api/v1/statements",
+                "/login", "/health",
+            ],
+            "change_point_path": "/api/v1/transfers",
+        }
+
+    @property
     def executive_kpi_emitter_service_name(self) -> str:
         return "member-portal"
 

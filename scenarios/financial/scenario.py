@@ -44,6 +44,23 @@ class FinancialScenario(BaseScenario):
         return 3
 
     @property
+    def raw_log_profile(self) -> dict[str, Any]:
+        return {
+            "service_name": "trading-edge",
+            "user_id_prefix": "trader",
+            "tier_field": "account_class",
+            "tier_values": [("retail", 55), ("prime", 30), ("institutional", 15)],
+            "country_weights": {"US": 45, "GB": 15, "JP": 10, "SG": 10, "DE": 8, "HK": 7, "CH": 5},
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "paths": [
+                "/api/v1/orders", "/api/v1/positions", "/api/v1/market-data",
+                "/api/v1/risk", "/api/v1/quotes", "/api/v1/portfolios",
+                "/login", "/health",
+            ],
+            "change_point_path": "/api/v1/orders",
+        }
+
+    @property
     def executive_kpi_emitter_service_name(self) -> str:
         return "risk-calculator"
 

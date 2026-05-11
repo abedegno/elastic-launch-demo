@@ -6,7 +6,7 @@ import logging
 
 import httpx
 
-from elastic_config.deployer_base import _kibana_headers, ProgressCallback
+from elastic_config.deployer_base import _es_headers, _kibana_headers, ProgressCallback
 
 logger = logging.getLogger("deployer")
 
@@ -16,6 +16,16 @@ class StreamsMixin:
     @property
     def _stream_name(self) -> str:
         return f"logs.otel.{self.ns}"
+
+    @property
+    def _ecs_stream_name(self) -> str:
+        return f"logs.ecs.{self.ns}"
+
+    @property
+    def _ecs_wired_stream(self) -> str:
+        """Wired-stream ingest endpoint. All scenarios POST to `logs.ecs/_bulk`;
+        the deployer then forks `logs.ecs` into per-scenario partitions."""
+        return "logs.ecs"
 
     def _create_stream(self, client: httpx.Client) -> None:
         """Fork logs.otel into a scenario-specific child stream."""
@@ -35,6 +45,66 @@ class StreamsMixin:
         )
         if resp.status_code >= 300:
             logger.warning("Stream fork failed (HTTP %s): %s", resp.status_code, resp.text[:500])
+
+    def _create_ecs_stream(self, client: httpx.Client) -> None:
+        """Fork the `logs.ecs` wired stream into this scenario's partition
+        `logs.ecs.{ns}`, filtered by service.namespace.
+
+        Mirrors how `logs.otel` / `logs.otel.{ns}` are handled. In 9.4+ wired
+        streams are enabled by default, so no data-stream PUT is needed — the
+        wired-stream endpoint accepts `_bulk` writes directly.
+        """
+        try:
+            resp = client.post(
+                f"{self.kibana_url}/api/streams/{self._ecs_wired_stream}/_fork",
+                headers=_kibana_headers(self.api_key),
+                json={
+                    "where": {
+                        "field": "service.namespace",
+                        "eq": self.ns,
+                    },
+                    "status": "enabled",
+                    "stream": {
+                        "name": self._ecs_stream_name,
+                    },
+                },
+            )
+            if resp.status_code >= 300:
+                logger.warning(
+                    "ECS stream fork failed (HTTP %s): %s",
+                    resp.status_code, resp.text[:500],
+                )
+        except Exception as exc:
+            logger.warning("ECS stream fork exception (non-fatal): %s", exc)
+
+    def _delete_ecs_stream(self, client: httpx.Client) -> None:
+        """Delete only this scenario's partition. The base wired stream
+        `logs.ecs` is managed by Elastic and shared across all scenarios."""
+        # 1. Delete the partition Streams entity (mirrors logs.otel teardown).
+        try:
+            resp = client.delete(
+                f"{self.kibana_url}/api/streams/{self._ecs_stream_name}",
+                headers=_kibana_headers(self.api_key),
+            )
+            if resp.status_code not in (200, 204, 404):
+                logger.warning(
+                    "Delete ECS partition stream %s returned HTTP %s",
+                    self._ecs_stream_name, resp.status_code,
+                )
+        except Exception as exc:
+            logger.warning("Delete ECS partition stream exception: %s", exc)
+
+        # 2. Delete this scenario's docs from the wired stream so co-deployed
+        #    scenarios aren't affected.
+        try:
+            client.post(
+                f"{self.elastic_url}/{self._ecs_wired_stream}/_delete_by_query",
+                headers=_es_headers(self.api_key),
+                params={"refresh": "false", "wait_for_completion": "false"},
+                json={"query": {"term": {"service.namespace": self.ns}}},
+            )
+        except Exception as exc:
+            logger.info("ECS docs delete-by-query skipped: %s", exc)
 
     def _deploy_significant_events(self, client: httpx.Client, notify: ProgressCallback):
         step = self._step(10)

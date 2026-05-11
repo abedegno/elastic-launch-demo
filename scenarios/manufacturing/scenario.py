@@ -56,6 +56,23 @@ class ManufacturingScenario(BaseScenario):
     # -- Executive Dashboard ----------------------------------------------------
 
     @property
+    def raw_log_profile(self) -> dict[str, Any]:
+        return {
+            "service_name": "mes-gateway",
+            "user_id_prefix": "op",
+            "tier_field": "line_type",
+            "tier_values": [("assembly", 50), ("packaging", 30), ("qa", 20)],
+            "country_weights": {"US": 30, "DE": 25, "JP": 20, "MX": 10, "CN": 10, "BR": 5},
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "paths": [
+                "/api/v1/work-orders", "/api/v1/plc/status", "/api/v1/oee",
+                "/api/v1/quality", "/api/v1/inventory", "/api/v1/batches",
+                "/api/v1/downtime", "/health",
+            ],
+            "change_point_path": "/api/v1/plc/status",
+        }
+
+    @property
     def executive_kpi_emitter_service_name(self) -> str:
         return "oee-analytics"
 

@@ -44,6 +44,24 @@ class GCPScenario(BaseScenario):
         return 9
 
     @property
+    def raw_log_profile(self) -> dict[str, Any]:
+        return {
+            "service_name": "cloud-gateway",
+            "user_id_prefix": "usr",
+            "tier_field": "support_tier",
+            "tier_values": [("basic", 60), ("standard", 30), ("premium", 10)],
+            "country_weights": {"US": 35, "GB": 12, "DE": 10, "IN": 12, "JP": 8, "BR": 8, "FR": 8, "AU": 7},
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "paths": [
+                "/v1/projects/{id}/instances", "/v1/projects/{id}/buckets",
+                "/v1/projects/{id}/iam", "/v1/projects/{id}/networks",
+                "/v1/projects/{id}/disks", "/v1/projects/{id}/operations",
+                "/login", "/health",
+            ],
+            "change_point_path": "/v1/projects/{id}/instances",
+        }
+
+    @property
     def executive_kpi_emitter_service_name(self) -> str:
         return "cloud-cdn-service"
 

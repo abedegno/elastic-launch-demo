@@ -14,7 +14,7 @@ from app.config import (
     SERVICES,
     ACTIVE_SCENARIO,
 )
-from app.telemetry import OTLPClient
+from app.telemetry import ESBulkClient, OTLPClient
 
 logger = logging.getLogger("nova7.manager")
 
@@ -33,6 +33,7 @@ class ServiceManager:
         self.dashboard_ws = dashboard_ws
         self._ctx = ctx  # ScenarioContext or None
         self.otlp = otlp_client or OTLPClient()
+        self.es_bulk = ESBulkClient()
         self.services: dict[str, Any] = {}
 
         # Countdown state — from context or module-level defaults
@@ -107,6 +108,7 @@ class ServiceManager:
         for svc in self.services.values():
             svc.stop()
         self.otlp.close()
+        self.es_bulk.close()
         logger.info("All services and generators stopped")
 
     # ── Generators ────────────────────────────────────────────────────
@@ -121,6 +123,7 @@ class ServiceManager:
         from log_generators.nginx_metrics_generator import run as run_nginx_metrics
         from log_generators.vpc_flow_generator import run as run_vpc
         from log_generators.jvm_metrics_generator import run as run_jvm
+        from log_generators.raw_access_log_generator import run as run_raw_access
 
         # Build scenario_data dict from context for scenario-dependent generators
         scenario_data = None
@@ -159,12 +162,17 @@ class ServiceManager:
         # Determine which infra generators to start based on scenario services
         _svc_names = set(scenario_data["services"].keys()) if scenario_data else set()
 
+        # Raw access-log generator uses ESBulkClient instead of OTLPClient
+        raw_access_args = (self.es_bulk, self._stop_event)
+        raw_access_kwargs = {"scenario_data": scenario_data} if scenario_data else {}
+
         generators = [
             ("gen-traces", run_traces, trace_args, trace_kwargs),
             ("gen-host-metrics", run_metrics, host_args, host_kwargs),
             ("gen-k8s-metrics", run_k8s, k8s_args, k8s_kwargs),
             ("gen-jvm-metrics", run_jvm, common_args, common_kwargs),
             ("gen-vpc-flow", run_vpc, common_args, common_kwargs),
+            ("gen-raw-access", run_raw_access, raw_access_args, raw_access_kwargs),
         ]
         # Only start nginx/mysql generators if their service is in the scenario
         if not _svc_names or "nginx-proxy" in _svc_names:

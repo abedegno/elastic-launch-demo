@@ -338,6 +338,28 @@ class BaseScenario(ABC):
         return groups
 
     @property
+    def raw_log_profile(self) -> dict[str, Any]:
+        """Profile for the raw ECS access-log generator.
+
+        Drives a per-scenario unparsed `logs.ecs.{ns}` stream so SAs can demo
+        Streams partition/parsing on the fly and use the visualization-creation
+        skill to build dashboards from domain-relatable raw data.
+
+        Override per scenario for industry-appropriate paths, user-id prefix,
+        tier field, and the change-point path that spikes during simulated faults.
+        """
+        return {
+            "service_name": f"{self.namespace}-edge-gateway",
+            "user_id_prefix": "u",
+            "tier_field": "user_tier",
+            "tier_values": [("free", 75), ("pro", 20), ("enterprise", 5)],
+            "country_weights": {"US": 35, "GB": 12, "DE": 12, "FR": 8, "JP": 8, "IN": 10, "BR": 8, "CA": 7},
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "paths": ["/api/v1/health"],
+            "change_point_path": "/api/v1/health",
+        }
+
+    @property
     def infra_names(self) -> dict[str, Any]:
         """Standard infrastructure names derived from namespace."""
         ns = self.namespace

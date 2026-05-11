@@ -23,6 +23,8 @@ from elastic_config.deployer_base import (
 from elastic_config.deployer_otlp import OtlpMixin
 from elastic_config.deployer_platform import PlatformMixin
 from elastic_config.deployer_apm import ApmMixin
+from elastic_config.deployer_aiops import AiopsMixin
+from elastic_config.deployer_backfill import BackfillMixin
 from elastic_config.deployer_slos import SloMixin
 from elastic_config.deployer_workflows import WorkflowsMixin
 from elastic_config.deployer_kb import KbMixin
@@ -50,6 +52,8 @@ class ScenarioDeployer(
     OtlpMixin,
     PlatformMixin,
     ApmMixin,
+    BackfillMixin,
+    AiopsMixin,
     SloMixin,
     WorkflowsMixin,
     KbMixin,
@@ -99,11 +103,13 @@ class ScenarioDeployer(
             DeployStep("Deploy AI agent tools", items_total=7),  # 8
             DeployStep("Create AI agent"),              # 9
             DeployStep("Create significant events", items_total=20),  # 10
-            DeployStep("Create data views", items_total=5),  # 11
+            DeployStep("Create data views", items_total=6),  # 11
             DeployStep("Import Kibana dashboards"),   # 12
             DeployStep("Create alert rules", items_total=20),  # 13
-            DeployStep("Enable APM anomaly detection"), # 14
-            DeployStep("Create SLOs", items_total=3),  # 15
+            DeployStep("Backfill raw ECS access logs"), # 14
+            DeployStep("Enable APM anomaly detection"), # 15
+            DeployStep("Enable logs ML jobs (rate + categorization)"), # 16
+            DeployStep("Create SLOs", items_total=3),  # 17
         ])
         _notify = callback or (lambda p: None)
         _notify(self.progress)
@@ -124,7 +130,9 @@ class ScenarioDeployer(
                 self._deploy_data_views(client, _notify)
                 self._deploy_dashboard(client, _notify)
                 self._deploy_alerting(client, _notify)
+                self._deploy_ecs_log_backfill(client, _notify)
                 self._deploy_apm_anomaly_detection(client, _notify)
+                self._deploy_logs_ml_jobs(client, _notify)
                 self._deploy_slos(client, _notify)
         except Exception as exc:
             self.progress.error = str(exc)
@@ -217,8 +225,16 @@ class ScenarioDeployer(
         # Delete agent + tools
         self._cleanup_agent(client)
 
+        # Delete ML jobs FIRST so datafeeds don't error on missing indices
+        self._cleanup_aiops_ml(client)
+        results["aiops_ml_cleaned"] = True
+
         # Delete service stream (also removes its significant events)
         self._delete_stream(client)
+
+        # Delete raw ECS stream + data stream
+        self._delete_ecs_stream(client)
+        results["ecs_stream_deleted"] = True
 
         # Delete dashboard
         resp = client.post(
@@ -300,14 +316,15 @@ class ScenarioDeployer(
                     step.detail = str(exc)
                 _notify(progress)
 
-                # Step 3: Delete service stream
+                # Step 3: Delete service streams (OTel + raw ECS)
                 step = progress.steps[3]
                 step.status = "running"
                 _notify(progress)
                 try:
                     self._delete_stream(client)
+                    self._delete_ecs_stream(client)
                     step.status = "ok"
-                    step.detail = f"Stream logs.otel.{self.ns} deleted"
+                    step.detail = f"Streams logs.otel.{self.ns} and logs.ecs.{self.ns} deleted"
                 except Exception as exc:
                     step.status = "failed"
                     step.detail = str(exc)
@@ -379,14 +396,15 @@ class ScenarioDeployer(
                     step.detail = str(exc)
                 _notify(progress)
 
-                # Step 8: Delete APM ML jobs
+                # Step 8: Delete APM + AIOps ML jobs
                 step = progress.steps[8]
                 step.status = "running"
                 _notify(progress)
                 try:
                     self._cleanup_apm_ml(client)
+                    self._cleanup_aiops_ml(client)
                     step.status = "ok"
-                    step.detail = "APM ML jobs and datafeeds removed"
+                    step.detail = "APM and AIOps ML jobs and datafeeds removed"
                 except Exception as exc:
                     step.status = "failed"
                     step.detail = str(exc)

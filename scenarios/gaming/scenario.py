@@ -43,6 +43,23 @@ class GamingScenario(BaseScenario):
         return 5
 
     @property
+    def raw_log_profile(self) -> dict[str, Any]:
+        return {
+            "service_name": "game-api-edge",
+            "user_id_prefix": "player",
+            "tier_field": "player_tier",
+            "tier_values": [("f2p", 80), ("plus", 15), ("vip", 5)],
+            "country_weights": {"US": 30, "KR": 15, "JP": 12, "DE": 8, "GB": 8, "BR": 10, "CN": 12, "MX": 5},
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "paths": [
+                "/api/v1/match", "/api/v1/leaderboard", "/api/v1/inventory",
+                "/api/v1/store", "/api/v1/friends", "/api/v1/chat",
+                "/login", "/health",
+            ],
+            "change_point_path": "/api/v1/match",
+        }
+
+    @property
     def executive_kpi_emitter_service_name(self) -> str:
         return "analytics-pipeline"
 

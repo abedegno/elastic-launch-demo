@@ -43,6 +43,22 @@ class EcommerceScenario(BaseScenario):
         return 7
 
     @property
+    def raw_log_profile(self) -> dict[str, Any]:
+        return {
+            "service_name": "storefront-edge",
+            "user_id_prefix": "u",
+            "tier_field": "user_tier",
+            "tier_values": [("free", 75), ("pro", 20), ("enterprise", 5)],
+            "country_weights": {"US": 40, "GB": 12, "DE": 10, "FR": 8, "JP": 8, "BR": 10, "CA": 7, "AU": 5},
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "paths": [
+                "/checkout", "/api/v2/cart", "/api/v2/orders",
+                "/products/{id}", "/search", "/login", "/account", "/health",
+            ],
+            "change_point_path": "/checkout",
+        }
+
+    @property
     def executive_kpi_emitter_service_name(self) -> str:
         return "ad-platform"
 
