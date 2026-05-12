@@ -465,9 +465,6 @@ async def list_deployments():
                 "running": inst.running,
                 "kibana_url": inst.ctx.kibana_url,
                 "kibana_display_url": KIBANA_PROXY or inst.ctx.kibana_url,
-                "has_executive_dashboard": bool(
-                    getattr(inst.ctx.scenario, "executive_kpi_emitter_service_name", None)
-                ),
             }
         )
     return result
