@@ -108,14 +108,13 @@ class AlertingMixin:
                 "name": rule_name,
                 "rule_type_id": ".es-query",
                 "consumer": "alerts",
-                # For auto-remediate channels, encode action_type (tags[2]) and channel
-                # number (tags[3]) in tags — workflow inputs from alert actions resolve blank,
-                # so all per-channel data needed by the workflow must live in tags.
-                "tags": (
-                    [self.ns, error_type, ch_data.get("remediation_action", ""), str(ch_int)]
-                    if auto_remediate
-                    else [self.ns, error_type]
-                ),
+                # Tag encoding (workflow inputs from alert actions resolve blank,
+                # so all per-channel data the workflow needs must live in tags):
+                #   tags[0] = namespace
+                #   tags[1] = error_type
+                #   tags[2] = remediation_action (HITL pauses for approval; auto-remediate skips)
+                #   tags[3] = channel number
+                "tags": [self.ns, error_type, ch_data.get("remediation_action", ""), str(ch_int)],
                 "schedule": {"interval": "1m"},
                 "params": {
                     "searchType": "esQuery",

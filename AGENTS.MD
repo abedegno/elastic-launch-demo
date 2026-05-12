@@ -963,9 +963,11 @@ workflow YAML files are deployed; the deployer routes each alert rule to the cor
 ```
 tags[0] = namespace          (e.g. "nova7")
 tags[1] = error_type         (e.g. "RSO-TRACKING-LOSS")
-tags[2] = remediation_action (auto-remediate channels only, e.g. "reset_safety_system")
-tags[3] = channel number     (auto-remediate channels only, e.g. "20")
+tags[2] = remediation_action (all channels, e.g. "reset_safety_system")
+tags[3] = channel number     (all channels, e.g. "20")
 ```
+
+HITL channels (1–15) carry the same tags as auto-remediate channels (16–20); the HITL workflow asks the agent to attempt the remediation, and `remediation_action.yaml`'s `waitForInput` step (gated by `requires_approval`) pauses for operator approval inside the Agent Builder conversation.
 
 **Alert rule naming:**
 
@@ -991,11 +993,11 @@ When falling back to `_wf_search`, distinguish by presence/absence of "Auto-Reme
 
 **HITL steps** (after `attach_alert_to_case`):
 
-1. `inject_case_context` — `kibana.request` to `/api/agent_builder/converse` with `conversation_id`; message MUST include explicit "Do NOT execute any remediation actions" — providing a case ID alone is enough for the agent to self-remediate
+1. `request_remediation` — `kibana.request` to `/api/agent_builder/converse` with `conversation_id`; asks the agent to call the `{ns}_remediation_action` workflow tool with `requires_approval: true`. The workflow's `waitForInput` step pauses execution at status `WAITING_FOR_INPUT`; Agent Builder surfaces the approval prompt inside the conversation. On approve, the workflow queues remediation and closes the case; on deny, it posts a denial comment and exits with the case open. Timeout is 30m to allow operator review.
 
 **Auto-remediate steps** (after `attach_alert_to_case`):
 
-1. `request_remediation` — `kibana.request` to `/api/agent_builder/converse` with `conversation_id`; asks the agent to call the `nova7_remediation_action` workflow tool passing `action_type`, `channel`, `error_type`, `case_id`, `dry_run: false`. The `remediation_action` workflow tool handles the queue write (for `RemediationPoller`), case comment, and case close.
+1. `request_remediation` — `kibana.request` to `/api/agent_builder/converse` with `conversation_id`; asks the agent to call the `{ns}_remediation_action` workflow tool passing `action_type`, `channel`, `error_type`, `case_id`, `dry_run: false`, `requires_approval: false`. The explicit `requires_approval: false` skips the `waitForInput` step inside `remediation_action.yaml`. The tool handles the queue write (for `RemediationPoller`), case comment, and case close.
 
 The `RemediationPoller` (`app/chaos/remediation_poller.py`) picks up pending queue entries and calls `chaos_controller.resolve(channel, force=True)` — no changes needed there.
 
@@ -1085,7 +1087,7 @@ POST /api/actions/connector
       timeout: 10m
     ```
 
-40. **LLM self-remediates when given a case ID after RCA** — After completing a root cause analysis, the agent is primed to fix the problem it just diagnosed. If a subsequent message contains a case ID (even just "Case X has been opened to track this incident"), the agent will look up the case and decide to execute remediation on its own. Any follow-up message in a HITL conversation context MUST include an explicit prohibition: "Do NOT execute any remediation actions. A human operator will review your RCA and decide whether to act." Without this, sporadic auto-remediation occurs on HITL channels.
+40. **LLM self-remediates when given a case ID after RCA** — After completing a root cause analysis, the agent is primed to fix the problem it just diagnosed. If a subsequent message contains a case ID, the agent will look up the case and execute remediation on its own. This is now the intended HITL behavior: the HITL workflow's `request_remediation` step tells the agent to call `remediation_action` with `requires_approval: true`, and the workflow's `waitForInput` step (gated by that input) pauses for operator approval inside the Agent Builder conversation. Auto-remediate channels pass `requires_approval: false` to skip the pause. Do NOT re-add a "Do NOT execute" prohibition — it would prevent the agent from invoking the remediation tool and break the HITL flow.
 
 41. **`attach_alert_to_case` must run immediately after `create_case`** — HTTP 400 "Alert cannot be attached to a closed case" occurs if this step runs after the case has already been closed by another step (e.g. `close_case` in the auto-remediate workflow, or via the `remediation_action` workflow tool). Place `attach_alert_to_case` as the very first step after `create_case`, before any AI agent calls, remediation steps, or case-management steps.
 
