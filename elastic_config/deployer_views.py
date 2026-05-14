@@ -6,7 +6,7 @@ import urllib.parse
 
 import httpx
 
-from elastic_config.deployer_base import _kibana_headers, ProgressCallback
+from elastic_config.deployer_base import _kibana_headers, _retry_http, ProgressCallback
 
 
 class DataViewsMixin:
@@ -102,27 +102,49 @@ class DataViewsMixin:
         step.detail = f"Created {created} data views"
         notify(self.progress)
 
-    def _cleanup_data_views(self, client: httpx.Client) -> int:
-        """Delete data views belonging to this scenario (matched by name prefix)."""
+    def _cleanup_data_views(self, client: httpx.Client) -> tuple[int, int]:
+        """Delete data views belonging to this scenario (matched by name prefix).
+
+        Returns ``(deleted, remaining)`` — remaining > 0 means some views could
+        not be removed even after retries (e.g. persistent API errors).
+        """
         scenario_prefix = f"{self.scenario.scenario_name} "
         deleted = 0
-        try:
-            resp = client.get(
-                f"{self.kibana_url}/api/data_views",
-                headers=_kibana_headers(self.api_key),
+
+        def _list_views() -> list[dict]:
+            resp = _retry_http(
+                lambda: client.get(
+                    f"{self.kibana_url}/api/data_views",
+                    headers=_kibana_headers(self.api_key),
+                ),
+                label="list data views",
             )
-            if resp.status_code < 300:
-                for view in resp.json().get("data_view", []):
-                    if view.get("name", "").startswith(scenario_prefix):
-                        view_id = view.get("id", "")
-                        if view_id:
-                            encoded_id = urllib.parse.quote(view_id, safe="")
-                            r = client.delete(
-                                f"{self.kibana_url}/api/data_views/data_view/{encoded_id}",
-                                headers=_kibana_headers(self.api_key),
-                            )
-                            if r.status_code < 300:
-                                deleted += 1
-        except Exception:
-            pass
-        return deleted
+            if resp is None or resp.status_code >= 300:
+                return []
+            try:
+                return resp.json().get("data_view", [])
+            except Exception:
+                return []
+
+        for view in _list_views():
+            if not view.get("name", "").startswith(scenario_prefix):
+                continue
+            view_id = view.get("id", "")
+            if not view_id:
+                continue
+            encoded_id = urllib.parse.quote(view_id, safe="")
+            r = _retry_http(
+                lambda: client.delete(
+                    f"{self.kibana_url}/api/data_views/data_view/{encoded_id}",
+                    headers=_kibana_headers(self.api_key),
+                ),
+                label=f"delete data view {view_id}",
+            )
+            if r is not None and (r.status_code < 300 or r.status_code == 404):
+                deleted += 1
+
+        # Verify: count any remaining views still matching this scenario.
+        remaining = sum(
+            1 for v in _list_views() if v.get("name", "").startswith(scenario_prefix)
+        )
+        return deleted, remaining

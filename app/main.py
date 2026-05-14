@@ -41,12 +41,25 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("nova7")
 
 # ── Multi-tenancy singletons ──────────────────────────────────────────────────
+from app.op_queue import OperationQueue
 from app.registry import InstanceRegistry
 from app.store import ChaosStore, DeploymentStore
 
 registry = InstanceRegistry()
 store = DeploymentStore()
 chaos_store = ChaosStore()
+op_queue = OperationQueue()
+
+
+def _queued_step(position: int, total: int) -> dict:
+    """Synthetic 'Queued' progress step that mirrors DeployStep.to_dict() shape."""
+    return {
+        "name": "Queued",
+        "status": "running",
+        "detail": f"Position {position} of {total} in queue",
+        "items_total": 0,
+        "items_done": 0,
+    }
 
 
 def _purge_deployment_records(deployment_id: str) -> None:
@@ -103,7 +116,6 @@ async def lifespan(app: FastAPI):
     # explicit scenario are provided.  Scenarios already running (restored from
     # SQLite) are skipped.
     if KIBANA_URL and ELASTIC_API_KEY and ACTIVE_SCENARIO_SET:
-        import threading
         from elastic_config.deployer import ScenarioDeployer
 
         kibana_url = KIBANA_URL.strip().rstrip("/")
@@ -172,6 +184,18 @@ async def lifespan(app: FastAPI):
 
             return _auto_deploy
 
+        def _make_on_position(s_id: str):
+            def _on_position(position: int, total: int) -> None:
+                entry = _deploy_progress.get(s_id)
+                if not entry or entry.get("finished"):
+                    return
+                steps = entry.get("steps") or []
+                if steps and steps[0].get("name") == "Queued":
+                    steps[0] = _queued_step(position, total)
+                else:
+                    entry["steps"] = [_queued_step(position, total)]
+            return _on_position
+
         for scenario_id in ACTIVE_SCENARIO_LIST:
             if registry.get(scenario_id):
                 continue  # Already running (restored from SQLite)
@@ -182,13 +206,16 @@ async def lifespan(app: FastAPI):
                 scenario_id,
             )
             _deploy_progress[scenario_id] = {
-                "finished": False, "error": "", "steps": [],
+                "finished": False, "error": "",
+                "scenario_id": scenario_id,
                 "scenario_name": scenario.scenario_name,
+                "steps": [_queued_step(1, 1)],
             }
-            threading.Thread(
-                target=_make_auto_deploy(scenario_id, scenario_id, scenario, deployer),
-                daemon=True,
-            ).start()
+            op_queue.submit_deploy(
+                scenario_id,
+                _make_auto_deploy(scenario_id, scenario_id, scenario, deployer),
+                _make_on_position(scenario_id),
+            )
 
     yield
 
@@ -246,19 +273,34 @@ def _inject_theme(html: str, deployment_id: Optional[str] = None) -> str:
 
     theme = scenario.theme
 
-    # Build CSS that maps theme vars to the variable names used in existing stylesheets
-    css_override = f""":root {{
-{theme.to_css_vars()}
-  --nominal: {theme.status_nominal};
-  --advisory: {theme.status_warning};
-  --caution: {theme.status_warning};
-  --warning: {theme.status_warning};
-  --critical: {theme.status_critical};
-  --bg-card: {theme.bg_tertiary};
-  --border: {theme.bg_tertiary};
-  --text-dim: {theme.text_secondary};
-}}
-body {{ font-family: {theme.font_family}; }}"""
+    # Elastic brand CSS — light theme matching the home page. All chaos pages share
+    # the same look regardless of scenario. Semantic status colors use Elastic palette.
+    css_override = """:root {
+  --elastic-blue: #0B64DD;
+  --teal: #48EFCF;
+  --yellow: #FEC514;
+  --light-poppy: #FF957D;
+  --pink: #F04E98;
+  --dev-blue: #101C3F;
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F5F7FA;
+  --bg-card: #FFFFFF;
+  --border: rgba(16, 28, 63, 0.15);
+  --border-card: #101C3F;
+  --text-primary: #1C1E23;
+  --text-secondary: #343741;
+  --text-dim: #69707D;
+  --nominal: #48EFCF;
+  --advisory: #FEC514;
+  --caution: #FF957D;
+  --warning: #FEC514;
+  --critical: #F04E98;
+  --resolve-green: #48EFCF;
+  --inject-red: #BD271E;
+  --status-nominal: #017D73;
+  --status-critical: #BD271E;
+}
+body { font-family: 'Inter', -apple-system, system-ui, sans-serif; }"""
 
     if getattr(scenario, "executive_kpi_emitter_service_name", None):
         revenue_dashboard_card = f"""
@@ -852,8 +894,6 @@ async def launch_setup(body: dict):
     Runs in a background thread. After deployment, creates a ScenarioInstance
     and registers it in the registry + SQLite store.
     """
-    import threading
-
     from scenarios import get_scenario as _get_scenario_by_id
     from elastic_config.deployer import ScenarioDeployer
     from app.context import ScenarioContext
@@ -892,6 +932,7 @@ async def launch_setup(body: dict):
 
     def _progress_cb(progress):
         d = progress.to_dict()
+        d["scenario_id"] = scenario_id
         d["scenario_name"] = scenario_name
         _deploy_progress[deployment_id] = d
 
@@ -949,11 +990,26 @@ async def launch_setup(body: dict):
         except Exception as exc:
             logger.exception("Failed to start instance for %s: %s", scenario_id, exc)
 
-    _deploy_progress[deployment_id] = {
-        "finished": False, "error": "", "steps": [], "scenario_name": scenario_name,
-    }
-    thread = threading.Thread(target=_run, daemon=True)
-    thread.start()
+    def _on_position(position: int, total: int) -> None:
+        entry = _deploy_progress.get(deployment_id)
+        if not entry or entry.get("finished"):
+            return
+        steps = entry.get("steps") or []
+        if steps and steps[0].get("name") == "Queued":
+            steps[0] = _queued_step(position, total)
+        else:
+            entry["steps"] = [_queued_step(position, total)]
+
+    existing = _deploy_progress.get(deployment_id)
+    if not existing or existing.get("finished"):
+        _deploy_progress[deployment_id] = {
+            "finished": False, "error": "",
+            "scenario_id": scenario_id, "scenario_name": scenario_name,
+            "steps": [_queued_step(1, 1)],
+        }
+    accepted = op_queue.submit_deploy(deployment_id, _run, _on_position)
+    if not accepted:
+        logger.info("Launch for %s ignored (already active or queued)", deployment_id)
 
     return {
         "status": "started",
@@ -977,14 +1033,25 @@ async def setup_progress(deployment_id: Optional[str] = None):
 async def active_deploys():
     """Return all deployments currently in progress (auto or manual).
 
+    Ordered: actively running first (in start order), then queued (in queue order).
     The selector UI calls this on page load so it can resume progress panels
     after a browser refresh without losing visibility into running deployments.
     """
+    ordered = op_queue.list_ordered("deploy")
+    seen = set(ordered)
+    # Anything in the progress map that isn't tracked by the queue (e.g., legacy
+    # in-flight ops) gets appended at the end so we don't drop it.
+    extras = [d for d, p in _deploy_progress.items()
+              if not p.get("finished", True) and d not in seen]
     return {
         "deployments": [
-            {"deployment_id": dep_id, "scenario_name": p.get("scenario_name", dep_id)}
-            for dep_id, p in _deploy_progress.items()
-            if not p.get("finished", True)
+            {
+                "deployment_id": dep_id,
+                "scenario_id": _deploy_progress.get(dep_id, {}).get("scenario_id", dep_id),
+                "scenario_name": _deploy_progress.get(dep_id, {}).get("scenario_name", dep_id),
+            }
+            for dep_id in ordered + extras
+            if dep_id in _deploy_progress and not _deploy_progress[dep_id].get("finished", True)
         ]
     }
 
@@ -1056,8 +1123,6 @@ async def teardown_setup(body: dict = {}):
 @app.post("/api/setup/stop-and-teardown")
 async def stop_and_teardown(body: dict = {}):
     """Stop generators and remove scenario artifacts from Elastic (async with progress)."""
-    import threading
-
     from elastic_config.deployer import ScenarioDeployer
 
     deployment_id = body.get("deployment_id") if body else None
@@ -1065,6 +1130,19 @@ async def stop_and_teardown(body: dict = {}):
     if not deployment_id:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="deployment_id is required")
+
+    # If the deploy never started (still queued), cancel it and short-circuit:
+    # no Elastic resources to tear down, and we must clear the deploy progress
+    # entry so the UI stops polling.
+    if op_queue.cancel_deploy(deployment_id):
+        logger.info("Cancelled queued deploy %s on teardown request", deployment_id)
+        dep = _deploy_progress.get(deployment_id)
+        if dep:
+            dep["finished"] = True
+            dep["error"] = "Cancelled before deployment started"
+        _purge_deployment_records(deployment_id)
+        _teardown_progress[deployment_id] = {"finished": True, "error": "", "steps": []}
+        return {"status": "cancelled", "deployment_id": deployment_id}
 
     inst = registry.remove(deployment_id)
 
@@ -1079,9 +1157,11 @@ async def stop_and_teardown(body: dict = {}):
         )
 
         scenario_name = inst.ctx.scenario.scenario_name
+        scenario_id = inst.scenario_id
 
         def _progress_cb(progress):
             d = progress.to_dict()
+            d["scenario_id"] = scenario_id
             d["scenario_name"] = scenario_name
             _teardown_progress[deployment_id] = d
 
@@ -1094,10 +1174,22 @@ async def stop_and_teardown(body: dict = {}):
             deployer.teardown_with_progress(callback=_progress_cb)
             _purge_deployment_records(deployment_id)
 
+        def _on_position(position: int, total: int) -> None:
+            entry = _teardown_progress.get(deployment_id)
+            if not entry or entry.get("finished"):
+                return
+            steps = entry.get("steps") or []
+            if steps and steps[0].get("name") == "Queued":
+                steps[0] = _queued_step(position, total)
+            else:
+                entry["steps"] = [_queued_step(position, total)]
+
         _teardown_progress[deployment_id] = {
-            "finished": False, "error": "", "steps": [], "scenario_name": scenario_name,
+            "finished": False, "error": "",
+            "scenario_id": scenario_id, "scenario_name": scenario_name,
+            "steps": [_queued_step(1, 1)],
         }
-        threading.Thread(target=_run_teardown, daemon=True).start()
+        op_queue.submit_teardown(deployment_id, _run_teardown, _on_position)
         return {"status": "stopping", "deployment_id": deployment_id}
 
     # No credentials (or no instance): stop synchronously (fast path) and mark done.
@@ -1125,14 +1217,23 @@ async def teardown_progress(deployment_id: Optional[str] = None):
 async def active_teardowns():
     """Return all teardowns that are currently in progress.
 
+    Ordered: actively running first (in start order), then queued (in queue order).
     The selector UI calls this on page load so it can resume progress panels
     after a browser refresh without losing visibility into running teardowns.
     """
+    ordered = op_queue.list_ordered("teardown")
+    seen = set(ordered)
+    extras = [d for d, p in _teardown_progress.items()
+              if not p.get("finished", True) and d not in seen]
     return {
         "teardowns": [
-            {"deployment_id": dep_id, "scenario_name": p.get("scenario_name", dep_id)}
-            for dep_id, p in _teardown_progress.items()
-            if not p.get("finished", True)
+            {
+                "deployment_id": dep_id,
+                "scenario_id": _teardown_progress.get(dep_id, {}).get("scenario_id", dep_id),
+                "scenario_name": _teardown_progress.get(dep_id, {}).get("scenario_name", dep_id),
+            }
+            for dep_id in ordered + extras
+            if dep_id in _teardown_progress and not _teardown_progress[dep_id].get("finished", True)
         ]
     }
 

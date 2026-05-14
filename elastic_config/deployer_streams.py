@@ -6,7 +6,7 @@ import logging
 
 import httpx
 
-from elastic_config.deployer_base import _es_headers, _kibana_headers, ProgressCallback
+from elastic_config.deployer_base import _es_headers, _kibana_headers, _retry_http, ProgressCallback
 
 logger = logging.getLogger("deployer")
 
@@ -77,22 +77,27 @@ class StreamsMixin:
         except Exception as exc:
             logger.warning("ECS stream fork exception (non-fatal): %s", exc)
 
-    def _delete_ecs_stream(self, client: httpx.Client) -> None:
+    def _delete_ecs_stream(self, client: httpx.Client) -> bool:
         """Delete only this scenario's partition. The base wired stream
-        `logs.ecs` is managed by Elastic and shared across all scenarios."""
+        `logs.ecs` is managed by Elastic and shared across all scenarios.
+
+        Returns True if the partition is gone (or never existed); False if it
+        is still present after retries.
+        """
         # 1. Delete the partition Streams entity (mirrors logs.otel teardown).
-        try:
-            resp = client.delete(
+        resp = _retry_http(
+            lambda: client.delete(
                 f"{self.kibana_url}/api/streams/{self._ecs_stream_name}",
                 headers=_kibana_headers(self.api_key),
+            ),
+            label=f"delete ECS partition {self._ecs_stream_name}",
+        )
+        deleted_ok = resp is not None and resp.status_code in (200, 204, 404)
+        if not deleted_ok and resp is not None:
+            logger.warning(
+                "Delete ECS partition stream %s returned HTTP %s after retries",
+                self._ecs_stream_name, resp.status_code,
             )
-            if resp.status_code not in (200, 204, 404):
-                logger.warning(
-                    "Delete ECS partition stream %s returned HTTP %s",
-                    self._ecs_stream_name, resp.status_code,
-                )
-        except Exception as exc:
-            logger.warning("Delete ECS partition stream exception: %s", exc)
 
         # 2. Delete this scenario's docs from the wired stream so co-deployed
         #    scenarios aren't affected.
@@ -105,6 +110,8 @@ class StreamsMixin:
             )
         except Exception as exc:
             logger.info("ECS docs delete-by-query skipped: %s", exc)
+
+        return deleted_ok
 
     def _deploy_significant_events(self, client: httpx.Client, notify: ProgressCallback):
         step = self._step(10)
@@ -152,18 +159,24 @@ class StreamsMixin:
         step.status = "ok" if step.items_done > 0 else "failed"
         notify(self.progress)
 
-    def _delete_stream(self, client: httpx.Client) -> None:
-        """Delete the scenario-specific stream (also removes its significant events)."""
-        try:
-            resp = client.delete(
+    def _delete_stream(self, client: httpx.Client) -> bool:
+        """Delete the scenario-specific stream (also removes its significant events).
+
+        Returns True if the stream is gone (deleted or 404), False if still present.
+        """
+        resp = _retry_http(
+            lambda: client.delete(
                 f"{self.kibana_url}/api/streams/{self._stream_name}",
                 headers=_kibana_headers(self.api_key),
-            )
-            if resp.status_code == 404:
-                return  # already gone
-            if resp.status_code >= 300:
-                logger.warning(
-                    "Failed to delete stream %s: HTTP %s", self._stream_name, resp.status_code,
-                )
-        except Exception as exc:
-            logger.warning("Exception deleting stream %s: %s", self._stream_name, exc)
+            ),
+            label=f"delete stream {self._stream_name}",
+        )
+        if resp is None:
+            return False
+        if resp.status_code == 404 or resp.status_code < 300:
+            return True
+        logger.warning(
+            "Failed to delete stream %s after retries: HTTP %s",
+            self._stream_name, resp.status_code,
+        )
+        return False

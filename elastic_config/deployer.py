@@ -220,7 +220,9 @@ class ScenarioDeployer(
         results["workflows_deleted"] = self._cleanup_workflows(client)
 
         # Delete alert rules
-        results["alerts_deleted"] = self._cleanup_alerts(client)
+        alerts_deleted, alerts_remaining = self._cleanup_alerts(client)
+        results["alerts_deleted"] = alerts_deleted
+        results["alerts_remaining"] = alerts_remaining
 
         # Delete agent + tools
         self._cleanup_agent(client)
@@ -255,13 +257,15 @@ class ScenarioDeployer(
         results["cases_deleted"] = self._cleanup_cases(client, self.ns)
 
         # Delete scenario-named data views
-        results["data_views_deleted"] = self._cleanup_data_views(client)
+        views_deleted, views_remaining = self._cleanup_data_views(client)
+        results["data_views_deleted"] = views_deleted
+        results["data_views_remaining"] = views_remaining
 
         return results
 
     def teardown(self) -> dict[str, Any]:
         """Remove scenario-specific resources from Elastic."""
-        with httpx.Client(timeout=30.0, verify=True) as client:
+        with httpx.Client(timeout=90.0, verify=True) as client:
             return self._teardown_scenario(client)
 
     def teardown_with_progress(self, callback: ProgressCallback | None = None) -> DeployProgress:
@@ -289,7 +293,7 @@ class ScenarioDeployer(
         _notify(progress)
 
         try:
-            with httpx.Client(timeout=30.0, verify=True) as client:
+            with httpx.Client(timeout=90.0, verify=True) as client:
                 # Step 1: Delete workflows
                 step = progress.steps[1]
                 step.status = "running"
@@ -308,9 +312,13 @@ class ScenarioDeployer(
                 step.status = "running"
                 _notify(progress)
                 try:
-                    deleted = self._cleanup_alerts(client)
-                    step.status = "ok"
-                    step.detail = f"Deleted {deleted} alert rules"
+                    deleted, remaining = self._cleanup_alerts(client)
+                    if remaining > 0:
+                        step.status = "failed"
+                        step.detail = f"Deleted {deleted} alert rules — {remaining} still present after retries"
+                    else:
+                        step.status = "ok"
+                        step.detail = f"Deleted {deleted} alert rules"
                 except Exception as exc:
                     step.status = "failed"
                     step.detail = str(exc)
@@ -321,10 +329,19 @@ class ScenarioDeployer(
                 step.status = "running"
                 _notify(progress)
                 try:
-                    self._delete_stream(client)
-                    self._delete_ecs_stream(client)
-                    step.status = "ok"
-                    step.detail = f"Streams logs.otel.{self.ns} and logs.ecs.{self.ns} deleted"
+                    otel_ok = self._delete_stream(client)
+                    ecs_ok = self._delete_ecs_stream(client)
+                    leftovers = []
+                    if not otel_ok:
+                        leftovers.append(f"logs.otel.{self.ns}")
+                    if not ecs_ok:
+                        leftovers.append(f"logs.ecs.{self.ns}")
+                    if leftovers:
+                        step.status = "failed"
+                        step.detail = f"Streams still present after retries: {', '.join(leftovers)}"
+                    else:
+                        step.status = "ok"
+                        step.detail = f"Streams logs.otel.{self.ns} and logs.ecs.{self.ns} deleted"
                 except Exception as exc:
                     step.status = "failed"
                     step.detail = str(exc)
@@ -441,9 +458,13 @@ class ScenarioDeployer(
                 step.status = "running"
                 _notify(progress)
                 try:
-                    deleted_views = self._cleanup_data_views(client)
-                    step.status = "ok"
-                    step.detail = f"Deleted {deleted_views} data views"
+                    deleted_views, remaining_views = self._cleanup_data_views(client)
+                    if remaining_views > 0:
+                        step.status = "failed"
+                        step.detail = f"Deleted {deleted_views} data views — {remaining_views} still present after retries"
+                    else:
+                        step.status = "ok"
+                        step.detail = f"Deleted {deleted_views} data views"
                 except Exception as exc:
                     step.status = "failed"
                     step.detail = str(exc)

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from elastic_config.deployer_base import _kibana_headers, ProgressCallback
+from elastic_config.deployer_base import _kibana_headers, _retry_http, ProgressCallback
 
 if TYPE_CHECKING:
     from scenarios.base import BaseScenario
@@ -165,97 +165,122 @@ class AlertingMixin:
         step.detail = f"Created {step.items_done}/{step.items_total} alert rules"
         notify(self.progress)
 
-    def _cleanup_alerts(self, client: httpx.Client) -> int:
+    def _cleanup_alerts(self, client: httpx.Client) -> tuple[int, int]:
         """Delete alert rules belonging to this scenario.
 
         Primary: name-based search (new-style rules named "{scenario_name} CH…").
         Fallback: tag-based search (old-style rules tagged with namespace).
+
+        Returns ``(deleted, remaining)`` — remaining > 0 indicates rules that
+        couldn't be removed (e.g. transient API errors despite retries).
         """
         deleted = 0
         deleted_ids: set[str] = set()
         scenario_name = self.scenario.scenario_name
 
+        def _delete_rule(rule_id: str) -> None:
+            nonlocal deleted
+            if not rule_id or rule_id in deleted_ids:
+                return
+            resp = _retry_http(
+                lambda: client.delete(
+                    f"{self.kibana_url}/api/alerting/rule/{rule_id}",
+                    headers=_kibana_headers(self.api_key),
+                ),
+                label=f"delete alert rule {rule_id}",
+            )
+            if resp is not None and (resp.status_code < 300 or resp.status_code == 404):
+                deleted_ids.add(rule_id)
+                deleted += 1
+
         # Primary: name-based (new-style rules named "{scenario_name} CH…")
-        try:
-            for page in range(1, 11):
-                resp = client.get(
+        for page in range(1, 11):
+            resp = _retry_http(
+                lambda: client.get(
                     f"{self.kibana_url}/api/alerting/rules/_find",
                     params={"per_page": 100, "page": page, "search_fields": "name", "search": scenario_name},
                     headers=_kibana_headers(self.api_key),
-                )
-                if resp.status_code >= 300:
-                    break
+                ),
+                label=f"find alerts by name page={page}",
+            )
+            if resp is None or resp.status_code >= 300:
+                break
+            try:
                 rules = resp.json().get("data", [])
-                if not rules:
-                    break
-                for rule in rules:
-                    if scenario_name not in rule.get("name", ""):
-                        continue
-                    rule_id = rule.get("id", "")
-                    if rule_id and rule_id not in deleted_ids:
-                        client.delete(
-                            f"{self.kibana_url}/api/alerting/rule/{rule_id}",
-                            headers=_kibana_headers(self.api_key),
-                        )
-                        deleted_ids.add(rule_id)
-                        deleted += 1
-        except Exception:
-            pass
+            except Exception:
+                break
+            if not rules:
+                break
+            for rule in rules:
+                if scenario_name not in rule.get("name", ""):
+                    continue
+                _delete_rule(rule.get("id", ""))
 
         # Fallback: tag-based (old-style rules tagged with namespace)
-        try:
-            for page in range(1, 11):
-                resp = client.get(
+        for page in range(1, 11):
+            resp = _retry_http(
+                lambda: client.get(
                     f"{self.kibana_url}/api/alerting/rules/_find?per_page=100&page={page}"
                     f"&filter=alert.attributes.tags:{self.ns}",
                     headers=_kibana_headers(self.api_key),
-                )
-                if resp.status_code >= 300:
-                    break
+                ),
+                label=f"find alerts by tag page={page}",
+            )
+            if resp is None or resp.status_code >= 300:
+                break
+            try:
                 rules = resp.json().get("data", [])
-                if not rules:
-                    break
-                for rule in rules:
-                    rule_id = rule.get("id", "")
-                    if rule_id and rule_id not in deleted_ids:
-                        client.delete(
-                            f"{self.kibana_url}/api/alerting/rule/{rule_id}",
-                            headers=_kibana_headers(self.api_key),
-                        )
-                        deleted_ids.add(rule_id)
-                        deleted += 1
-        except Exception:
-            pass
+            except Exception:
+                break
+            if not rules:
+                break
+            for rule in rules:
+                _delete_rule(rule.get("id", ""))
 
         # Migration cleanup: pre-refactor rules named "Channel XX: {name}" with no scenario prefix.
-        # Build exact expected names from this scenario's channel registry.
         old_names: set[str] = set()
         for ch_num, ch_data in self.scenario.channel_registry.items():
             num_str = f"{int(ch_num):02d}"
             old_names.add(f"Channel {num_str}: {ch_data['name']}")
 
         if old_names:
-            try:
-                for page in range(1, 11):
-                    resp = client.get(
+            for page in range(1, 11):
+                resp = _retry_http(
+                    lambda: client.get(
                         f"{self.kibana_url}/api/alerting/rules/_find?per_page=100&page={page}",
                         headers=_kibana_headers(self.api_key),
-                    )
-                    if resp.status_code >= 300:
-                        break
+                    ),
+                    label=f"find migration alerts page={page}",
+                )
+                if resp is None or resp.status_code >= 300:
+                    break
+                try:
                     rules = resp.json().get("data", [])
-                    if not rules:
-                        break
-                    for rule in rules:
-                        rule_id = rule.get("id", "")
-                        if rule.get("name", "") in old_names and rule_id and rule_id not in deleted_ids:
-                            client.delete(
-                                f"{self.kibana_url}/api/alerting/rule/{rule_id}",
-                                headers=_kibana_headers(self.api_key),
-                            )
-                            deleted_ids.add(rule_id)
-                            deleted += 1
+                except Exception:
+                    break
+                if not rules:
+                    break
+                for rule in rules:
+                    if rule.get("name", "") in old_names:
+                        _delete_rule(rule.get("id", ""))
+
+        # Verify: count any rules still matching this scenario after cleanup.
+        remaining = 0
+        verify = _retry_http(
+            lambda: client.get(
+                f"{self.kibana_url}/api/alerting/rules/_find",
+                params={"per_page": 100, "page": 1, "search_fields": "name", "search": scenario_name},
+                headers=_kibana_headers(self.api_key),
+            ),
+            label="verify alerts cleanup",
+        )
+        if verify is not None and verify.status_code < 300:
+            try:
+                remaining = sum(
+                    1 for r in verify.json().get("data", [])
+                    if scenario_name in r.get("name", "")
+                )
             except Exception:
                 pass
 
-        return deleted
+        return deleted, remaining
