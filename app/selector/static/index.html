@@ -635,17 +635,14 @@
             let actions = '';
             if (isDeploying) {
                 actions = `<button class="card-btn card-btn-deploying" disabled>${deployLabel}</button>`;
-            } else if (isTearingDown && !dep) {
+            } else if (isTearingDown) {
                 actions = `<button class="card-btn card-btn-teardown" disabled>${teardownLabel}</button>`;
             } else if (dep) {
-                const teardownBtn = tearingDownIds.has(dep.deployment_id)
-                    ? `<button class="card-btn card-btn-teardown" disabled>${teardownLabel}</button>`
-                    : `<button class="card-btn card-btn-teardown" onclick="stopAndTeardown('${dep.deployment_id}')">Stop &amp; Teardown</button>`;
                 actions = `
                     <a class="card-btn card-btn-exec" href="${dep.kibana_display_url}/app/dashboards#/view/${dep.namespace}-business-exec-dashboard" target="_blank" rel="noopener">Business Dashboard</a>
                     <a class="card-btn card-btn-ops" href="${dep.kibana_display_url}/app/dashboards#/view/${dep.namespace}-exec-dashboard" target="_blank" rel="noopener">Operations Dashboard</a>
                     <a class="card-btn card-btn-chaos" href="/chaos?deployment_id=${dep.deployment_id}">Chaos</a>
-                    ${teardownBtn}
+                    <button class="card-btn card-btn-teardown" onclick="stopAndTeardown('${dep.deployment_id}')">Stop &amp; Teardown</button>
                 `;
             } else {
                 actions = `<button class="card-btn card-btn-launch" onclick="launchScenario('${s.id}')">&#9654; Launch</button>`;
