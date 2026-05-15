@@ -7,7 +7,6 @@ picks up pending docs, resolves the corresponding fault channel, and marks them 
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import threading
@@ -18,7 +17,6 @@ import httpx
 
 if TYPE_CHECKING:
     from app.chaos.controller import ChaosController
-    from app.dashboard.websocket import DashboardWebSocket
 
 logger = logging.getLogger("nova7.remediation_poller")
 
@@ -37,14 +35,12 @@ class RemediationPoller:
         elastic_api_key: str,
         namespace: str,
         chaos_controller: ChaosController,
-        dashboard_ws: DashboardWebSocket,
         stop_event: threading.Event,
     ):
         self._elastic_url = elastic_url.rstrip("/")
         self._api_key = elastic_api_key
         self._namespace = namespace
         self._chaos = chaos_controller
-        self._ws = dashboard_ws
         self._stop = stop_event
         self._index = f"{namespace}-remediation-queue"
         self._thread: threading.Thread | None = None
@@ -204,9 +200,6 @@ class RemediationPoller:
             doc_id,
         )
 
-        # Broadcast via WebSocket so dashboard updates immediately
-        self._broadcast_resolve(channel, result)
-
         self._mark_processed(client, doc_id)
 
     def _mark_processed(
@@ -264,25 +257,3 @@ class RemediationPoller:
                         logger.info("Cleaned up %d old remediation docs", deleted)
         except Exception:
             logger.debug("Cleanup of processed remediation docs failed", exc_info=True)
-
-    def _broadcast_resolve(self, channel: int, result: dict[str, Any]) -> None:
-        """Send a chaos_resolved event via the dashboard WebSocket."""
-        msg = {
-            "type": "chaos_resolved",
-            "channel": channel,
-            "name": result.get("name", ""),
-            "source": "remediation_poller",
-        }
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.ensure_future(self._ws.broadcast(msg))
-            else:
-                loop.run_until_complete(self._ws.broadcast(msg))
-        except RuntimeError:
-            # No event loop in this thread — create a temporary one
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(self._ws.broadcast(msg))
-            finally:
-                loop.close()

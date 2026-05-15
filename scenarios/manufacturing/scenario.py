@@ -56,6 +56,23 @@ class ManufacturingScenario(BaseScenario):
     # -- Executive Dashboard ----------------------------------------------------
 
     @property
+    def raw_log_profile(self) -> dict[str, Any]:
+        return {
+            "service_name": "mes-gateway",
+            "user_id_prefix": "op",
+            "tier_field": "line_type",
+            "tier_values": [("assembly", 50), ("packaging", 30), ("qa", 20)],
+            "country_weights": {"US": 30, "DE": 25, "JP": 20, "MX": 10, "CN": 10, "BR": 5},
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "paths": [
+                "/api/v1/work-orders", "/api/v1/plc/status", "/api/v1/oee",
+                "/api/v1/quality", "/api/v1/inventory", "/api/v1/batches",
+                "/api/v1/downtime", "/health",
+            ],
+            "change_point_path": "/api/v1/plc/status",
+        }
+
+    @property
     def executive_kpi_emitter_service_name(self) -> str:
         return "oee-analytics"
 
@@ -1158,9 +1175,7 @@ class ManufacturingScenario(BaseScenario):
             status_info="#58a6ff",
             font_family="'Inter', system-ui, sans-serif",
             font_mono="'JetBrains Mono', 'Fira Code', monospace",
-            dashboard_title="Production Operations Center",
             chaos_title="Plant Incident Simulator",
-            landing_title="Manufacturing Operations",
             service_label="System",
             channel_label="Incident",
         )

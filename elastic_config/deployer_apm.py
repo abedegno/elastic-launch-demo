@@ -133,14 +133,14 @@ class ApmMixin:
             logger.warning("metrics@custom look_back_time update failed (non-fatal): %s", exc)
 
     def _deploy_apm_anomaly_detection(self, client: httpx.Client, notify: ProgressCallback):
-        """Step 13: Create APM ML anomaly detection job and start datafeed.
+        """Create APM ML anomaly detection job and start datafeed.
 
         Modelled after the job created by the Kibana APM ML module:
         - Single job, three detectors (latency / throughput / failure-rate)
         - Composite aggregation (date_histogram + transaction.type + service.name)
         - summary_count_field_name: "doc_count" (composite bucket doc_count)
         """
-        step = self._step(14)
+        step = self._step(15)
         step.status = "running"
         notify(self.progress)
 

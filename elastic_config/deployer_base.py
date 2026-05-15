@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Optional
+
+import httpx
+
+logger = logging.getLogger("deployer")
 
 
 # ── Progress reporting ──────────────────────────────────────────────────────
@@ -61,3 +67,46 @@ def _es_headers(api_key: str) -> dict[str, str]:
         "Content-Type": "application/json",
         "Authorization": f"ApiKey {api_key}",
     }
+
+
+# ── Retry helper ────────────────────────────────────────────────────────────
+
+# HTTP statuses that warrant a retry: lock contention (409), rate limit (429),
+# and 5xx server errors.
+_TRANSIENT_STATUSES = {409, 429, 500, 502, 503, 504}
+
+
+def _retry_http(
+    call: Callable[[], httpx.Response],
+    *,
+    attempts: int = 4,
+    base_delay: float = 0.75,
+    label: str = "",
+) -> Optional[httpx.Response]:
+    """Run an HTTP call with exponential-backoff retries on transient failures.
+
+    Retries on httpx timeouts/network errors and on transient HTTP status codes
+    (409 conflict from concurrent shared-resource mutation, 429, 5xx).
+
+    Returns the final httpx.Response (which may still be an error status if all
+    retries were exhausted), or None if every attempt raised an exception.
+    """
+    last_resp: Optional[httpx.Response] = None
+    for attempt in range(attempts):
+        try:
+            resp = call()
+            if resp.status_code not in _TRANSIENT_STATUSES:
+                return resp
+            last_resp = resp
+            logger.warning(
+                "%s returned HTTP %s (attempt %d/%d)",
+                label or "request", resp.status_code, attempt + 1, attempts,
+            )
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            logger.warning(
+                "%s raised %s (attempt %d/%d)",
+                label or "request", exc.__class__.__name__, attempt + 1, attempts,
+            )
+        if attempt < attempts - 1:
+            time.sleep(base_delay * (2 ** attempt))
+    return last_resp

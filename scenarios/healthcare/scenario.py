@@ -44,6 +44,23 @@ class HealthcareScenario(BaseScenario):
         return 4
 
     @property
+    def raw_log_profile(self) -> dict[str, Any]:
+        return {
+            "service_name": "patient-portal-edge",
+            "user_id_prefix": "mem",
+            "tier_field": "plan_type",
+            "tier_values": [("hmo", 45), ("ppo", 35), ("medicare", 20)],
+            "country_weights": {"US": 95, "CA": 3, "MX": 2},
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "paths": [
+                "/api/v1/patients/{id}", "/api/v1/appointments",
+                "/api/v1/orders/lab", "/api/v1/billing", "/api/v1/messages",
+                "/api/v1/prescriptions", "/login", "/health",
+            ],
+            "change_point_path": "/api/v1/orders/lab",
+        }
+
+    @property
     def executive_kpi_emitter_service_name(self) -> str:
         return "billing-processor"
 
@@ -1190,9 +1207,7 @@ class HealthcareScenario(BaseScenario):
             status_info="#1565c0",
             font_family="'Inter', system-ui, sans-serif",
             font_mono="'JetBrains Mono', 'Fira Code', monospace",
-            dashboard_title="Clinical Systems Dashboard",
             chaos_title="System Disruption Simulator",
-            landing_title="Clinical Systems Operations",
             service_label="Service",
             channel_label="Channel",
         )

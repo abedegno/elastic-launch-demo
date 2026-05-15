@@ -135,6 +135,7 @@ steps:
           - error_type: {{ event.rule.tags[1] }}
           - case_id: {{ steps.create_case.output.id }}
           - dry_run: false
+          - requires_approval: false
           - justification: Automated remediation triggered by alert rule
     timeout: 10m
 

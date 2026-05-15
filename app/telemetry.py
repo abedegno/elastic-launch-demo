@@ -386,3 +386,113 @@ class OTLPClient:
     def close(self) -> None:
         if self.client:
             self.client.close()
+
+
+class ESBulkClient:
+    """Posts plain ECS-shaped documents to an Elasticsearch data stream via `_bulk`.
+
+    Used by the raw access-log generator (which deliberately bypasses OTLP so the
+    demo can showcase non-OTel log onboarding and AI-driven Streams parsing).
+    Silently no-ops if ELASTIC_URL / ELASTIC_API_KEY are not configured.
+    """
+
+    def __init__(
+        self,
+        elastic_url: str | None = None,
+        api_key: str | None = None,
+    ):
+        from app.config import ELASTIC_URL, ELASTIC_API_KEY
+
+        self.elastic_url = (elastic_url or ELASTIC_URL or "").strip().rstrip("/")
+        self.api_key = (api_key or ELASTIC_API_KEY or "").strip()
+
+        headers = {"Content-Type": "application/x-ndjson"}
+        if self.api_key:
+            headers["Authorization"] = f"ApiKey {self.api_key}"
+        self.client = httpx.Client(headers=headers, http2=True, timeout=10)
+        self.consecutive_failures = 0
+        self.max_failures_before_backoff = 5
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.elastic_url and self.api_key)
+
+    def reconfigure(self, elastic_url: str, api_key: str) -> None:
+        self.elastic_url = elastic_url.strip().rstrip("/")
+        self.api_key = api_key.strip()
+        self.consecutive_failures = 0
+        headers = {"Content-Type": "application/x-ndjson"}
+        if self.api_key:
+            headers["Authorization"] = f"ApiKey {self.api_key}"
+        if self.client:
+            try:
+                self.client.close()
+            except Exception:
+                pass
+        self.client = httpx.Client(headers=headers, http2=True, timeout=10)
+        logger.info("ESBulkClient reconfigured -> %s", self.elastic_url)
+
+    def send_bulk(self, data_stream: str, docs: list[dict[str, Any]]) -> int:
+        """POST docs to {elastic_url}/{data_stream}/_bulk using `create` actions.
+
+        Returns the number of docs the server reports as indexed (0 if request failed).
+        """
+        if not docs or not self.configured:
+            return 0
+        if self.consecutive_failures >= self.max_failures_before_backoff:
+            backoff = min(
+                2 ** (self.consecutive_failures - self.max_failures_before_backoff), 30
+            )
+            if time.time() % backoff > 1:
+                return 0
+
+        lines: list[str] = []
+        for doc in docs:
+            lines.append('{"create":{}}')
+            lines.append(json.dumps(doc, separators=(",", ":")))
+        body = "\n".join(lines) + "\n"
+
+        url = f"{self.elastic_url}/{data_stream}/_bulk"
+        try:
+            resp = self.client.post(url, content=body)
+            resp.raise_for_status()
+            self.consecutive_failures = 0
+            data = resp.json()
+            if data.get("errors"):
+                # Surface first error so misconfigured templates/mappings show up early.
+                first = next(
+                    (
+                        it["create"].get("error")
+                        for it in data.get("items", [])
+                        if it.get("create", {}).get("error")
+                    ),
+                    None,
+                )
+                if first:
+                    logger.warning("ESBulk %s partial failure: %s", data_stream, first)
+            return len(docs)
+        except httpx.RequestError as exc:
+            self.consecutive_failures += 1
+            if self.consecutive_failures <= 3:
+                logger.warning("ESBulk %s send failed (connection): %s", data_stream, exc)
+        except httpx.HTTPStatusError as exc:
+            self.consecutive_failures += 1
+            if self.consecutive_failures <= 3:
+                logger.warning(
+                    "ESBulk %s send failed (HTTP %d): %s",
+                    data_stream,
+                    exc.response.status_code,
+                    exc.response.text[:200],
+                )
+        except Exception as exc:
+            self.consecutive_failures += 1
+            if self.consecutive_failures <= 3:
+                logger.warning("ESBulk %s send failed: %s", data_stream, exc)
+        return 0
+
+    def close(self) -> None:
+        if self.client:
+            try:
+                self.client.close()
+            except Exception:
+                pass

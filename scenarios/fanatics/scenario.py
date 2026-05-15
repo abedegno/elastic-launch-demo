@@ -44,6 +44,23 @@ class FanaticsScenario(BaseScenario):
         return 2
 
     @property
+    def raw_log_profile(self) -> dict[str, Any]:
+        return {
+            "service_name": "commerce-edge",
+            "user_id_prefix": "fan",
+            "tier_field": "member_tier",
+            "tier_values": [("guest", 60), ("member", 30), ("allstar", 10)],
+            "country_weights": {"US": 80, "CA": 8, "GB": 5, "MX": 4, "AU": 3},
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "paths": [
+                "/api/v1/catalog", "/api/v1/cart", "/api/v1/checkout",
+                "/api/v1/orders", "/api/v1/jerseys/{team}", "/api/v1/teams",
+                "/login", "/health",
+            ],
+            "change_point_path": "/api/v1/checkout",
+        }
+
+    @property
     def executive_kpi_emitter_service_name(self) -> str:
         return "digital-marketplace"
 
@@ -1210,9 +1227,7 @@ class FanaticsScenario(BaseScenario):
             status_info="#58a6ff",
             font_family="'Inter', system-ui, sans-serif",
             grid_background=True,
-            dashboard_title="Network Operations Center (NOC)",
             chaos_title="Incident Simulator",
-            landing_title="Fanatics Infrastructure Operations",
         )
 
     @property

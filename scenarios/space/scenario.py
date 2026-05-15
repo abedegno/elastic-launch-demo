@@ -43,6 +43,23 @@ class SpaceScenario(BaseScenario):
         return 1
 
     @property
+    def raw_log_profile(self) -> dict[str, Any]:
+        return {
+            "service_name": "mission-control-api",
+            "user_id_prefix": "gs",
+            "tier_field": "mission_class",
+            "tier_values": [("cubesat", 55), ("geo", 30), ("deep-space", 15)],
+            "country_weights": {"US": 50, "DE": 12, "JP": 10, "GB": 8, "FR": 8, "IN": 6, "AU": 6},
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "paths": [
+                "/api/v1/telemetry", "/api/v1/orbits/{satellite}",
+                "/api/v1/commands", "/api/v1/groundstations",
+                "/api/v1/passes", "/api/v1/ephemeris", "/health",
+            ],
+            "change_point_path": "/api/v1/commands",
+        }
+
+    @property
     def executive_kpi_emitter_service_name(self) -> str:
         return "mission-control"
 
@@ -1143,9 +1160,7 @@ class SpaceScenario(BaseScenario):
             font_family="'JetBrains Mono', 'Fira Code', monospace",
             font_mono="'JetBrains Mono', 'Fira Code', monospace",
             scanline_effect=True,
-            dashboard_title="Mission Control",
             chaos_title="Chaos Controller",
-            landing_title="NOVA-7 Mission Control",
             service_label="System",
             channel_label="Channel",
         )

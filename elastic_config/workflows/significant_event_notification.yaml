@@ -1,11 +1,14 @@
 version: "1"
 name: __SCENARIO_NAME__ Significant Event Notification (Human in the Loop)
 description: >
-  Notify launch operations team when a significant event is detected.
-  Triggered by alert rules — uses event.rule.tags[1] for the error_type
-  search, extracts user_email from event_name, sends email notification
-  immediately, then runs AI root cause analysis and creates a case with
-  RCA findings.
+  Notify launch operations team when a significant event is detected on a
+  HITL channel (1-15). Triggered by alert rules — uses event.rule.tags[1] for
+  the error_type search, extracts user_email from event_name, sends email
+  notification immediately, runs AI root cause analysis and creates a case,
+  then asks the agent to propose remediation. The agent invokes the
+  remediation_action workflow tool which pauses at a waitForInput step;
+  Agent Builder surfaces the approval prompt inside the conversation for the
+  operator to approve or deny.
 
 triggers:
   - type: alert
@@ -48,9 +51,11 @@ steps:
         Error Type: {{ event.rule.tags[1] }}
         Total errors (15m): {{ steps.count_errors.output.values[0][0] }}
 
-        An AI root cause analysis is underway — a case with detailed findings will be created shortly.
+        An AI root cause analysis is underway. A case will be created with the
+        agent's findings and a proposed remediation. Approve or deny the
+        remediation in the Agent Builder conversation linked from the case.
 
-        Open Kibana to investigate and request remediation:
+        Open Kibana to investigate:
         __KIBANA_URL__/app/dashboards#/view/__NS__-exec-dashboard
 
   - name: run_rca
@@ -108,7 +113,7 @@ steps:
           name: "{{ event.rule.name }}"
         owner: "observability"
 
-  - name: inject_case_context
+  - name: request_remediation
     type: kibana.request
     with:
       method: POST
@@ -119,9 +124,22 @@ steps:
         agent_id: __AGENT_ID__
         conversation_id: "{{ steps.run_rca.output.conversation_id }}"
         input: >
-          Case {{ steps.create_case.output.id }} has been opened to track this incident.
-          Do NOT execute any remediation actions.
-    timeout: 10m
+          Case {{ steps.create_case.output.id }} has been opened. Propose and
+          execute the appropriate remediation using the remediation_action
+          workflow tool with these parameters:
+          - action_type: {{ event.rule.tags[2] }}
+          - channel: {{ event.rule.tags[3] }}
+          - error_type: {{ event.rule.tags[1] }}
+          - case_id: {{ steps.create_case.output.id }}
+          - dry_run: false
+          - requires_approval: true
+          - justification: Operator approval requested via Agent Builder
+
+          The tool will pause for operator approval before queueing the
+          remediation. If the operator denies, add a brief comment to the case
+          noting the denial — do not retry. If the operator approves, the tool
+          will queue the remediation and close the case automatically.
+    timeout: 30m
 
   - name: audit_log
     type: elasticsearch.index
@@ -132,5 +150,7 @@ steps:
         error_type: "{{ event.rule.tags[1] }}"
         total_errors: "{{ steps.count_errors.output.values[0][0] }}"
         rca_case_created: true
+        auto_remediated: false
+        approval_requested: true
         mission_id: "__SCENARIO_NAME__"
       refresh: wait_for
