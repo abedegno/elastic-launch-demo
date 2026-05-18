@@ -179,13 +179,15 @@ PROCESS_TEMPLATES = [
 
 
 # ── Host definitions from active scenario ─────────────────────────────────────
-def _load_hosts():
+def _load_hosts_and_clusters():
     from scenarios import get_scenario
 
-    return get_scenario(ACTIVE_SCENARIO).hosts
+    scn = get_scenario(ACTIVE_SCENARIO)
+    cluster_by_provider = {c["provider"]: c["name"] for c in scn.k8s_clusters}
+    return scn.hosts, cluster_by_provider
 
 
-HOSTS = _load_hosts()
+HOSTS, CLUSTER_BY_PROVIDER = _load_hosts_and_clusters()
 
 
 def _build_host_resource(host_cfg: dict) -> dict:
@@ -214,6 +216,10 @@ def _build_host_resource(host_cfg: dict) -> dict:
     ]:
         if key in host_cfg:
             attrs[key] = host_cfg[key]
+
+    cluster_name = CLUSTER_BY_PROVIDER.get(host_cfg.get("cloud.provider"))
+    if cluster_name:
+        attrs["k8s.cluster.name"] = cluster_name
 
     attrs["telemetry.sdk.name"] = "opentelemetry"
     attrs["telemetry.sdk.version"] = "1.24.0"
@@ -567,12 +573,14 @@ def _generate_host_metrics(
     fs_metrics = []
     disk_total = state.disk_total
     disk_used_pct = rng.uniform(0.20, 0.75)
+    reserved_pct = 0.05  # 5% reserved for root, matching real Linux ext4/xfs behavior
     for device, mountpoint, fs_type in [
         ("/dev/sda1", "/", "ext4"),
         ("/dev/sdb1", "/data", "xfs"),
     ]:
+        reserved = int(disk_total * reserved_pct)
         used = int(disk_total * disk_used_pct)
-        free = disk_total - used
+        free = disk_total - used - reserved
         fs_metrics.append(
             _build_gauge_metric(
                 "system.filesystem.usage",
@@ -597,6 +605,20 @@ def _generate_host_metrics(
                     "mountpoint": mountpoint,
                     "type": fs_type,
                     "state": "free",
+                },
+                is_int=True,
+            )
+        )
+        fs_metrics.append(
+            _build_gauge_metric(
+                "system.filesystem.usage",
+                reserved,
+                "By",
+                attributes={
+                    "device": device,
+                    "mountpoint": mountpoint,
+                    "type": fs_type,
+                    "state": "reserved",
                 },
                 is_int=True,
             )

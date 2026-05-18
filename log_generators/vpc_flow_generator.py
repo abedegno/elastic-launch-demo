@@ -3,7 +3,11 @@
 
 Generates logs that populate:
   - [AWS VPC OTEL] VPC Flow Logs Overview dashboard
+  - [AWS VPC OTEL] Traffic Analysis dashboard
+  - [AWS VPC OTEL] Interface Analysis dashboard
   - [GCP VPC OTEL] VPC Flow Logs Overview dashboard
+  - [GCP VPC OTEL] Traffic Analysis dashboard
+  - [GCP VPC OTEL] Interface Analysis dashboard
 
 Sends to separate data streams (aws_vpcflow / gcp_vpcflow) so fields are
 properly indexed and searchable by ES|QL — NOT the default `logs` stream
@@ -89,6 +93,31 @@ COUNTRY_CODES = ["USA", "DEU", "GBR", "JPN", "AUS", "CAN", "FRA", "BRA", "IND", 
 TRANSPORTS = ["tcp", "udp", "icmp"]
 COMMON_PORTS = [22, 53, 80, 443, 3306, 5432, 6379, 8080, 8443, 9200, 9300]
 
+AWS_ENI_IDS = [
+    "eni-0a1b2c3d4e5f60001",
+    "eni-0a1b2c3d4e5f60002",
+    "eni-0a1b2c3d4e5f60003",
+    "eni-0a1b2c3d4e5f60004",
+    "eni-0a1b2c3d4e5f60005",
+    "eni-0a1b2c3d4e5f60006",
+    "eni-0a1b2c3d4e5f60007",
+    "eni-0a1b2c3d4e5f60008",
+]
+
+PORT_TO_PROTOCOL = {
+    22: "ssh",
+    53: "dns",
+    80: "http",
+    443: "https",
+    3306: "mysql",
+    5432: "postgresql",
+    6379: "redis",
+    8080: "http",
+    8443: "https",
+    9200: "http",
+    9300: "http",
+}
+
 
 # ── AWS VPC flow log generation ─────────────────────────────────────────────
 
@@ -122,15 +151,21 @@ def _generate_aws_flow_record(rng: random.Random) -> dict:
         rng.choice(COMMON_PORTS) if rng.random() < 0.7 else rng.randint(1024, 65535)
     )
     bytes_transferred = rng.randint(64, 1_500_000)
+    transport = rng.choice(["tcp"] * 6 + ["udp"] * 3 + ["icmp"])
+    packets = max(1, bytes_transferred // rng.randint(500, 1500))
+    protocol = PORT_TO_PROTOCOL.get(dst_port, PORT_TO_PROTOCOL.get(src_port, transport))
 
     attrs = {
         "aws.vpc.flow.action": action,
         "aws.vpc.flow.bytes": bytes_transferred,
+        "aws.vpc.flow.packets": packets,
         "source.address": src_ip,
         "source.port": src_port,
         "destination.address": dst_ip,
         "destination.port": dst_port,
-        "network.transport": rng.choice(["tcp"] * 6 + ["udp"] * 3 + ["icmp"]),
+        "network.transport": transport,
+        "network.interface.name": rng.choice(AWS_ENI_IDS),
+        "network.protocol.name": protocol,
     }
 
     body = (
@@ -181,6 +216,13 @@ def _generate_gcp_flow_record(
     src_vpc = rng.choice(_vpc_names)
     dst_vpc = rng.choice(_vpc_names)
     transport = rng.choice(["tcp"] * 6 + ["udp"] * 3 + ["icmp"])
+    src_port = (
+        rng.choice(COMMON_PORTS) if rng.random() < 0.6 else rng.randint(1024, 65535)
+    )
+    dst_port = (
+        rng.choice(COMMON_PORTS) if rng.random() < 0.7 else rng.randint(1024, 65535)
+    )
+    protocol = PORT_TO_PROTOCOL.get(dst_port, PORT_TO_PROTOCOL.get(src_port, transport))
 
     attrs = {
         "gcp.vpc.flow.bytes_sent": bytes_sent,
@@ -190,8 +232,12 @@ def _generate_gcp_flow_record(
         "gcp.vpc.flow.destination.vpc.name": dst_vpc,
         "gcp.vpc.flow.source.geo.country.iso_code.alpha3": rng.choice(COUNTRY_CODES),
         "source.address": src_ip,
+        "source.port": src_port,
         "destination.address": dst_ip,
+        "destination.port": dst_port,
         "network.transport": transport,
+        "network.interface.name": rng.choice(["nic0", "nic1"]),
+        "network.protocol.name": protocol,
     }
 
     body = (
