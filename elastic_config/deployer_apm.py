@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -341,6 +342,8 @@ class ApmMixin:
             if resp.status_code >= 300:
                 raise RuntimeError(f"ML datafeed start failed: {resp.text}")
 
+            self._wait_for_apm_catchup(client, [f"datafeed-{job_id}"], timeout=120)
+
             step.status = "ok"
             step.detail = f"Started ML job: {job_id}"
         except Exception as exc:
@@ -348,6 +351,31 @@ class ApmMixin:
             step.detail = str(exc)
             logger.warning("APM anomaly detection setup failed (non-fatal): %s", exc)
         notify(self.progress)
+
+    def _wait_for_apm_catchup(
+        self, client: httpx.Client, feed_ids: list[str], timeout: int = 120,
+    ) -> None:
+        """Wait until APM datafeeds have caught up to real-time."""
+        logger.info("Waiting for APM datafeeds to catch up...")
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            all_caught_up = True
+            for feed_id in feed_ids:
+                r = client.get(
+                    f"{self.elastic_url}/_ml/datafeeds/{feed_id}/_stats",
+                    headers=_es_headers(self.api_key),
+                )
+                if r.status_code == 200:
+                    for df in r.json().get("datafeeds", []):
+                        rs = df.get("running_state", {})
+                        if not rs.get("real_time_running", False):
+                            all_caught_up = False
+                            break
+            if all_caught_up:
+                logger.info("APM datafeeds caught up to real-time")
+                return
+            time.sleep(3)
+        logger.warning("APM datafeed catch-up timed out after %ds", timeout)
 
     def _get_apm_rollup_start(self, client: httpx.Client) -> str | None:
         """Query the earliest @timestamp in the transaction rollup index."""
