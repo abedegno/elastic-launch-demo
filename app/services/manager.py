@@ -157,6 +157,10 @@ class ServiceManager:
         common_args = (self.otlp, self._stop_event)
         common_kwargs = {"scenario_data": scenario_data} if scenario_data else {}
 
+        # Chaos-aware kwargs for infra log generators (nginx, mysql, jvm)
+        chaos_kwargs = dict(common_kwargs)
+        chaos_kwargs["chaos_controller"] = self.chaos_controller
+
         # Raw access-log generator uses ESBulkClient instead of OTLPClient
         raw_access_args = (self.es_bulk, self._stop_event)
         raw_access_kwargs = {"scenario_data": scenario_data} if scenario_data else {}
@@ -165,12 +169,12 @@ class ServiceManager:
             ("gen-traces", run_traces, trace_args, trace_kwargs),
             ("gen-host-metrics", run_metrics, host_args, host_kwargs),
             ("gen-k8s-metrics", run_k8s, k8s_args, k8s_kwargs),
-            ("gen-jvm-metrics", run_jvm, common_args, common_kwargs),
+            ("gen-jvm-metrics", run_jvm, common_args, chaos_kwargs),
             ("gen-vpc-flow", run_vpc, common_args, common_kwargs),
             ("gen-raw-access", run_raw_access, raw_access_args, raw_access_kwargs),
-            ("gen-nginx", run_nginx, common_args, common_kwargs),
+            ("gen-nginx", run_nginx, common_args, chaos_kwargs),
             ("gen-nginx-metrics", run_nginx_metrics, common_args, common_kwargs),
-            ("gen-mysql", run_mysql, common_args, common_kwargs),
+            ("gen-mysql", run_mysql, common_args, chaos_kwargs),
         ]
         for name, fn, args, kwargs in generators:
             t = threading.Thread(

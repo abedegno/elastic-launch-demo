@@ -317,10 +317,15 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                     scenario=None,
                     active_channels: list[int] | None = None,
                     channel_registry: dict | None = None,
-                    db_connection_map: dict | None = None) -> dict[str, list]:
+                    db_connection_map: dict | None = None) -> tuple[dict[str, list], list[tuple[int, str, str, str]]]:
     """Generate a single distributed trace across multiple services.
 
-    Returns a dict mapping service_name -> list of spans for that service.
+    Returns (spans_by_service, error_publish) where:
+      * spans_by_service maps service_name -> list of spans for that service
+      * error_publish is a list of (channel_id, svc, trace_id, span_id) tuples
+        for error spans tied to active channels — used to populate the per-channel
+        trace context store so fault logs can pivot to the actual error trace.
+
     When chaos_affected is provided, those services get high error rates (70%)
     and elevated latency; all others use a healthy 3% baseline.
     """
@@ -333,6 +338,13 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
 
     trace_id = _gen_trace_id()
     spans_by_service: dict[str, list] = {}
+    error_publish: list[tuple[int, str, str, str]] = []
+
+    def _record_error_span(svc: str, span_id_: str) -> None:
+        """Track this error span for per-channel trace context publishing."""
+        if _svc_channels.get(svc):
+            for ch_id in _svc_channels[svc]:
+                error_publish.append((ch_id, svc, trace_id, span_id_))
 
     # Pick a random entry-point service (weighted toward first service)
     service_names = list(_services.keys())
@@ -395,6 +407,17 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                 is_affected = bool(_svc_channels.get(svc))
                 for ch in active_channels:
                     extra.update(scenario.get_correlation_attribute(ch, is_err or is_affected, rng))
+        # Canonical channel join key — single attribute filterable across spans, logs, metrics
+        if _svc_channels.get(svc) and channel_registry:
+            primary_ch = _svc_channels[svc][0]
+            ch_entry = channel_registry.get(primary_ch, {})
+            extra["chaos.channel"] = primary_ch
+            if ch_entry.get("name"):
+                extra["chaos.fault_type"] = ch_entry["name"]
+            if ch_entry.get("subsystem"):
+                extra["chaos.subsystem"] = ch_entry["subsystem"]
+            if is_err and ch_entry.get("error_type"):
+                extra["error.type"] = ch_entry["error_type"]
         return extra
 
     root_attrs = {
@@ -428,6 +451,8 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
         events=root_events,
     )
     spans_by_service.setdefault(entry_service, []).append(root_span)
+    if root_status == STATUS_ERROR:
+        _record_error_span(entry_service, root_span_id)
 
     # Add DB span if this service does DB operations
     if entry_service in _db_ops and rng.random() < 0.6:
@@ -456,6 +481,16 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
             db_status = STATUS_OK
             db_events = None
 
+        _db_attrs = {
+            "db.system": db_info["db_system"] if db_info else "postgresql",
+            "db.name": db_info["db_name"] if db_info else f"{_namespace}_telemetry",
+            "db.statement": statement,
+            "db.operation": op,
+            "db.sql.table": table,
+            "server.address": db_info["host"] if db_info else f"{_namespace}-db-host",
+            "server.port": db_info["port"] if db_info else 5432,
+        }
+        _db_attrs.update(_extra_attrs(entry_service, db_status == STATUS_ERROR))
         db_span = client.build_span(
             name=f"{op} {table}",
             trace_id=trace_id,
@@ -464,18 +499,12 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
             kind=SPAN_KIND_CLIENT,
             duration_ms=db_duration,
             status_code=db_status,
-            attributes={
-                "db.system": db_info["db_system"] if db_info else "postgresql",
-                "db.name": db_info["db_name"] if db_info else f"{_namespace}_telemetry",
-                "db.statement": statement,
-                "db.operation": op,
-                "db.sql.table": table,
-                "server.address": db_info["host"] if db_info else f"{_namespace}-db-host",
-                "server.port": db_info["port"] if db_info else 5432,
-            },
+            attributes=_db_attrs,
             events=db_events,
         )
         spans_by_service.setdefault(entry_service, []).append(db_span)
+        if db_status == STATUS_ERROR:
+            _record_error_span(entry_service, db_span_id)
 
     # Generate downstream CLIENT+SERVER spans based on topology
     downstream_calls = _topology.get(entry_service, [])
@@ -504,6 +533,17 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
 
             # CLIENT span on the caller side
             client_span_id = _gen_span_id()
+            _client_attrs = {
+                "http.request.method": callee_method,
+                "url.path": callee_endpoint,
+                "http.response.status_code": call_http_status,
+                "server.address": f"{callee_service}-host",
+                "server.port": 8080,
+                "net.peer.name": f"{callee_service}-host",
+                "net.peer.port": 8080,
+            }
+            # Tag with caller's channel if affected; falls back to callee if caller isn't
+            _client_attrs.update(_extra_attrs(entry_service if _svc_channels.get(entry_service) else callee_service, is_this_error))
             client_span = client.build_span(
                 name=f"{callee_method} {callee_endpoint}",
                 trace_id=trace_id,
@@ -512,15 +552,7 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                 kind=SPAN_KIND_CLIENT,
                 duration_ms=call_duration,
                 status_code=call_status,
-                attributes={
-                    "http.request.method": callee_method,
-                    "url.path": callee_endpoint,
-                    "http.response.status_code": call_http_status,
-                    "server.address": f"{callee_service}-host",
-                    "server.port": 8080,
-                    "net.peer.name": f"{callee_service}-host",
-                    "net.peer.port": 8080,
-                },
+                attributes=_client_attrs,
             )
             spans_by_service.setdefault(entry_service, []).append(client_span)
 
@@ -557,6 +589,8 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                 events=callee_events,
             )
             spans_by_service.setdefault(callee_service, []).append(server_span)
+            if call_status == STATUS_ERROR:
+                _record_error_span(callee_service, server_span_id)
 
             # DB span on the callee side (if applicable)
             if callee_service in _db_ops and rng.random() < 0.5:
@@ -585,6 +619,16 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                     db_status = STATUS_OK
                     db_events = None
 
+                _db_attrs2 = {
+                    "db.system": db_info["db_system"] if db_info else "postgresql",
+                    "db.name": db_info["db_name"] if db_info else f"{_namespace}_telemetry",
+                    "db.statement": statement,
+                    "db.operation": op,
+                    "db.sql.table": table,
+                    "server.address": db_info["host"] if db_info else f"{_namespace}-db-host",
+                    "server.port": db_info["port"] if db_info else 5432,
+                }
+                _db_attrs2.update(_extra_attrs(callee_service, db_status == STATUS_ERROR))
                 db_span = client.build_span(
                     name=f"{op} {table}",
                     trace_id=trace_id,
@@ -593,18 +637,12 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                     kind=SPAN_KIND_CLIENT,
                     duration_ms=db_duration,
                     status_code=db_status,
-                    attributes={
-                        "db.system": db_info["db_system"] if db_info else "postgresql",
-                        "db.name": db_info["db_name"] if db_info else f"{_namespace}_telemetry",
-                        "db.statement": statement,
-                        "db.operation": op,
-                        "db.sql.table": table,
-                        "server.address": db_info["host"] if db_info else f"{_namespace}-db-host",
-                        "server.port": db_info["port"] if db_info else 5432,
-                    },
+                    attributes=_db_attrs2,
                     events=db_events,
                 )
                 spans_by_service.setdefault(callee_service, []).append(db_span)
+                if db_status == STATUS_ERROR:
+                    _record_error_span(callee_service, db_span_id)
 
             # Second-level downstream calls (e.g., navigation -> sensor-validator)
             second_downstream = _topology.get(callee_service, [])
@@ -619,6 +657,16 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
 
                 # CLIENT span
                 second_client_id = _gen_span_id()
+                _second_client_attrs = {
+                    "http.request.method": second_method,
+                    "url.path": second_endpoint,
+                    "http.response.status_code": 200,
+                    "server.address": f"{second_callee}-host",
+                    "server.port": 8080,
+                    "net.peer.name": f"{second_callee}-host",
+                    "net.peer.port": 8080,
+                }
+                _second_client_attrs.update(_extra_attrs(callee_service if _svc_channels.get(callee_service) else second_callee, False))
                 second_client_span = client.build_span(
                     name=f"{second_method} {second_endpoint}",
                     trace_id=trace_id,
@@ -627,20 +675,20 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                     kind=SPAN_KIND_CLIENT,
                     duration_ms=second_duration,
                     status_code=second_status,
-                    attributes={
-                        "http.request.method": second_method,
-                        "url.path": second_endpoint,
-                        "http.response.status_code": 200,
-                        "server.address": f"{second_callee}-host",
-                        "server.port": 8080,
-                        "net.peer.name": f"{second_callee}-host",
-                        "net.peer.port": 8080,
-                    },
+                    attributes=_second_client_attrs,
                 )
                 spans_by_service.setdefault(callee_service, []).append(second_client_span)
 
                 # SERVER span
                 second_server_id = _gen_span_id()
+                _second_server_attrs = {
+                    "http.request.method": second_method,
+                    "url.path": second_endpoint,
+                    "http.response.status_code": 200,
+                    "server.address": f"{second_callee}-host",
+                    "server.port": 8080,
+                }
+                _second_server_attrs.update(_extra_attrs(second_callee, False))
                 second_server_span = client.build_span(
                     name=f"{second_method} {second_endpoint}",
                     trace_id=trace_id,
@@ -649,17 +697,11 @@ def _generate_trace(client: OTLPClient, resources: dict, rng: random.Random,
                     kind=SPAN_KIND_SERVER,
                     duration_ms=max(1, second_duration - 2),
                     status_code=second_status,
-                    attributes={
-                        "http.request.method": second_method,
-                        "url.path": second_endpoint,
-                        "http.response.status_code": 200,
-                        "server.address": f"{second_callee}-host",
-                        "server.port": 8080,
-                    },
+                    attributes=_second_server_attrs,
                 )
                 spans_by_service.setdefault(second_callee, []).append(second_server_span)
 
-    return spans_by_service
+    return spans_by_service, error_publish
 
 
 # ── Run loop (used by ServiceManager and standalone) ──────────────────────────
@@ -729,7 +771,7 @@ def run(client: OTLPClient, stop_event: threading.Event, chaos_controller=None,
 
         batch_by_service: dict[str, list] = {}
         for _ in range(num_traces):
-            trace_spans = _generate_trace(
+            trace_spans, error_publish = _generate_trace(
                 client, resources, rng, chaos_affected or None,
                 services=_services, namespace=_namespace,
                 service_topology=_topology, entry_endpoints=_endpoints,
@@ -745,6 +787,10 @@ def run(client: OTLPClient, stop_event: threading.Event, chaos_controller=None,
                 # Publish latest trace context for log-trace correlation
                 if spans:
                     _trace_context_store.set(svc, spans[0]["traceId"], spans[0]["spanId"])
+            # Publish per-channel error trace context so fault logs can pivot to the
+            # actual error trace rather than the last-seen-per-service trace.
+            for ch_id, svc, t_id, s_id in error_publish:
+                _trace_context_store.set_for_channel(ch_id, svc, t_id, s_id)
 
         batch_span_count = 0
         for svc, spans in batch_by_service.items():
