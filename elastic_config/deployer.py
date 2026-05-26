@@ -99,20 +99,20 @@ class ScenarioDeployer(
             DeployStep("Derive OTLP endpoint"),         # 2
             DeployStep("Clean up old artifacts"),       # 3
             DeployStep("Configure platform settings"),  # 4
-            DeployStep("Install OTel integrations", items_total=5),  # 5
-            DeployStep("Generate APM rollup data"),     # 6
-            DeployStep("Deploy workflows", items_total=5),  # 7
-            DeployStep("Index knowledge base", items_total=20),  # 8
-            DeployStep("Deploy AI agent tools", items_total=7),  # 9
-            DeployStep("Create AI agent"),              # 10
-            DeployStep("Create significant events", items_total=20),  # 11
-            DeployStep("Create data views", items_total=6),  # 12
-            DeployStep("Import Kibana dashboards"),   # 13
-            DeployStep("Create alert rules", items_total=20),  # 14
-            DeployStep("Backfill raw ECS access logs"), # 15
-            DeployStep("Enable APM anomaly detection"), # 16
-            DeployStep("Enable logs ML jobs (rate + categorization)"), # 17
-            DeployStep("Create SLOs", items_total=3),  # 18
+            DeployStep("Generate APM rollup data"),     # 5
+            DeployStep("Deploy workflows", items_total=5),  # 6
+            DeployStep("Index knowledge base", items_total=20),  # 7
+            DeployStep("Deploy AI agent tools", items_total=7),  # 8
+            DeployStep("Create AI agent"),              # 9
+            DeployStep("Create significant events", items_total=20),  # 10
+            DeployStep("Create data views", items_total=6),  # 11
+            DeployStep("Import Kibana dashboards"),   # 12
+            DeployStep("Create alert rules", items_total=20),  # 13
+            DeployStep("Backfill raw ECS access logs"), # 14
+            DeployStep("Enable APM anomaly detection"), # 15
+            DeployStep("Enable logs ML jobs (rate + categorization)"), # 16
+            DeployStep("Create SLOs", items_total=3),  # 17
+            DeployStep("Install OTel integrations", items_total=5),  # 18
         ])
         _notify = callback or (lambda p: None)
         _notify(self.progress)
@@ -124,7 +124,6 @@ class ScenarioDeployer(
                 self._derive_otlp_step(client, _notify)
                 self._cleanup_all_scenarios_step(client, _notify)
                 self._configure_platform_settings(client, _notify)
-                self._install_integrations(client, _notify)
                 self._deploy_apm_rollup(client, _notify)
                 self._deploy_workflows(client, _notify)
                 self._deploy_knowledge_base(client, _notify)
@@ -138,6 +137,7 @@ class ScenarioDeployer(
                 self._deploy_apm_anomaly_detection(client, _notify)
                 self._deploy_logs_ml_jobs(client, _notify)
                 self._deploy_slos(client, _notify)
+                self._install_integrations(client, _notify)
         except Exception as exc:
             self.progress.error = str(exc)
             logger.exception("Deployment failed")

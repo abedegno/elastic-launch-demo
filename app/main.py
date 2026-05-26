@@ -374,6 +374,13 @@ def _derive_elastic_url(kibana_url: str, api_key: str, explicit: str = "") -> st
             )
             if resp.status_code == 200:
                 items = resp.json().get("items", [])
+                # Prefer is_default (Serverless: name "Default output"); fall back to legacy name.
+                for item in items:
+                    if item.get("is_default"):
+                        hosts = item.get("hosts", [])
+                        if hosts:
+                            logger.info("Derived ES URL via Fleet API: %s", hosts[0])
+                            return hosts[0].rstrip("/")
                 for item in items:
                     if item.get("name") == "default":
                         hosts = item.get("hosts", [])
