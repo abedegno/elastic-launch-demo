@@ -6,7 +6,7 @@ import random
 import time
 from typing import Any
 
-from scenarios.base import BaseScenario, CountdownConfig, UITheme
+from scenarios.base import BaseScenario, UITheme
 
 
 class EcommerceScenario(BaseScenario):
@@ -1192,13 +1192,9 @@ class EcommerceScenario(BaseScenario):
             status_critical="#ef4444",
             status_info="#3b82f6",
             font_family="'Inter', system-ui, sans-serif",
-            grid_background=True,
             chaos_title="Incident Simulator",
         )
 
-    @property
-    def countdown_config(self) -> CountdownConfig:
-        return CountdownConfig(enabled=False)
 
     # ── Agent Config ──────────────────────────────────────────────────
 

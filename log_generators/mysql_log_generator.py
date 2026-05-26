@@ -27,6 +27,11 @@ import time
 
 from app.telemetry import OTLPClient, _format_attributes, SCHEMA_URL, _now_ns
 from app.config import NAMESPACE
+from app.trace_context import _trace_context_store
+
+# MySQL is the backend data tier for the demo: any active fault is observable
+# as slow / failing queries downstream. This permissive matching keeps the
+# trace<->log channel pivot demonstrable across every scenario.
 
 _DB_PREFIX = NAMESPACE.replace("-", "_")
 
@@ -253,6 +258,11 @@ def _render_query(template: str, rng: random.Random, db_prefix: str) -> str:
     )
 
 
+def _channel_relevant_to_mysql(ch: dict) -> bool:
+    """Any active channel is reflected at the backend DB tier."""
+    return bool(ch)
+
+
 def _generate_query_sample_event(
     client: OTLPClient,
     rng: random.Random,
@@ -260,18 +270,37 @@ def _generate_query_sample_event(
     tables: dict,
     db_prefix: str,
     ns: str,
+    active_chaos: dict | None = None,
 ) -> tuple[dict, dict]:
-    """Generate a db.server.query_sample log event and a correlated DB trace span."""
+    """Generate a db.server.query_sample log event and a correlated DB trace span.
+
+    When ``active_chaos`` is provided, the query is slow (>500ms),
+    the span is marked STATUS_ERROR, and chaos.* attrs tag both signals.
+    Trace_id/span_id sourced from the shared trace context store when available.
+    """
     operation, template = rng.choice(QUERY_TEMPLATES)
     db = rng.choice(databases)
     table = rng.choice(tables[db])
     query = _render_query(template, rng, db_prefix)
 
-    wait_ns = rng.randint(1_000_000, 50_000_000_000)
+    if active_chaos:
+        # Slow + erroring queries during DB-tier chaos
+        wait_ns = rng.randint(800_000_000, 50_000_000_000)
+    else:
+        wait_ns = rng.randint(1_000_000, 50_000_000_000)
     duration_ms = max(1, wait_ns // 1_000_000)
 
-    trace_id = secrets.token_hex(16)
-    span_id = secrets.token_hex(8)
+    trace_id = None
+    span_id = None
+    if active_chaos:
+        for svc in active_chaos.get("affected_services", []):
+            t, s = _trace_context_store.get(svc)
+            if t and s:
+                trace_id, span_id = t, s
+                break
+    if trace_id is None:
+        trace_id = secrets.token_hex(16)
+        span_id = secrets.token_hex(8)
 
     attrs = {
         "db.query.text": query,
@@ -283,8 +312,16 @@ def _generate_query_sample_event(
         "mysql.wait_type": rng.choice(WAIT_TYPES),
         "mysql.events_waits_current.timer_wait": wait_ns,
     }
+    if active_chaos:
+        attrs["chaos.channel"] = active_chaos["channel_id"]
+        if active_chaos.get("name"):
+            attrs["chaos.fault_type"] = active_chaos["name"]
+        if active_chaos.get("subsystem"):
+            attrs["chaos.subsystem"] = active_chaos["subsystem"]
+        if active_chaos.get("error_type"):
+            attrs["error.type"] = active_chaos["error_type"]
 
-    severity = "WARN" if duration_ms > 200 else "INFO"
+    severity = "ERROR" if active_chaos else ("WARN" if duration_ms > 200 else "INFO")
     log_record = client.build_log_record(
         severity=severity,
         body=query,
@@ -294,7 +331,25 @@ def _generate_query_sample_event(
         event_name="db.server.query_sample",
     )
 
-    span_status = STATUS_ERROR if duration_ms > 500 else STATUS_OK
+    span_status = STATUS_ERROR if (active_chaos or duration_ms > 500) else STATUS_OK
+    _span_attrs = {
+        "db.system": "mysql",
+        "db.name": db,
+        "db.statement": query,
+        "db.operation": operation,
+        "db.sql.table": table,
+        "net.peer.name": f"{ns}-mysql-host",
+        "net.peer.port": 3306,
+        "db.user": f"{db_prefix}_app",
+    }
+    if active_chaos:
+        _span_attrs["chaos.channel"] = active_chaos["channel_id"]
+        if active_chaos.get("name"):
+            _span_attrs["chaos.fault_type"] = active_chaos["name"]
+        if active_chaos.get("subsystem"):
+            _span_attrs["chaos.subsystem"] = active_chaos["subsystem"]
+        if active_chaos.get("error_type"):
+            _span_attrs["error.type"] = active_chaos["error_type"]
     span = client.build_span(
         name=f"{operation} {table}",
         trace_id=trace_id,
@@ -302,16 +357,7 @@ def _generate_query_sample_event(
         kind=SPAN_KIND_CLIENT,
         duration_ms=duration_ms,
         status_code=span_status,
-        attributes={
-            "db.system": "mysql",
-            "db.name": db,
-            "db.statement": query,
-            "db.operation": operation,
-            "db.sql.table": table,
-            "net.peer.name": f"{ns}-mysql-host",
-            "net.peer.port": 3306,
-            "db.user": f"{db_prefix}_app",
-        },
+        attributes=_span_attrs,
     )
 
     return log_record, span
@@ -524,6 +570,7 @@ def run(
     client: OTLPClient,
     stop_event: threading.Event,
     scenario_data: dict | None = None,
+    chaos_controller=None,
 ) -> None:
     """Run MySQL generator loop until stop_event is set."""
     rng = random.Random()
@@ -534,6 +581,8 @@ def run(
     else:
         ns = NAMESPACE
         db_prefix = _DB_PREFIX
+
+    _channel_registry: dict = scenario_data.get("channel_registry", {}) if scenario_data else {}
 
     databases = [
         f"{db_prefix}_telemetry",
@@ -562,17 +611,38 @@ def run(
     total_spans = 0
     scrape_count = 0
 
-    logger.info("MySQL generator started (namespace=%s, db_prefix=%s)", ns, db_prefix)
+    logger.info(
+        "MySQL generator started (namespace=%s, db_prefix=%s, chaos_aware=%s)",
+        ns, db_prefix, chaos_controller is not None,
+    )
 
     while not stop_event.is_set():
         batch_size = rng.randint(BATCH_SIZE_MIN, BATCH_SIZE_MAX)
+
+        # Resolve a single MySQL-relevant active channel (if any)
+        active_chaos: dict | None = None
+        if chaos_controller and _channel_registry:
+            for ch_id in chaos_controller.get_active_channels():
+                ch = _channel_registry.get(ch_id)
+                if ch and _channel_relevant_to_mysql(ch):
+                    active_chaos = {
+                        "channel_id": ch_id,
+                        "name": ch.get("name"),
+                        "subsystem": ch.get("subsystem"),
+                        "error_type": ch.get("error_type"),
+                        "affected_services": ch.get("affected_services", []),
+                    }
+                    break
 
         # db.server.query_sample events + correlated trace spans
         sample_records = []
         spans = []
         for _ in range(batch_size):
+            # During active chaos, ~50% of sampled queries reflect the fault
+            req_chaos = active_chaos if (active_chaos and rng.random() < 0.5) else None
             log_record, span = _generate_query_sample_event(
-                client, rng, databases, tables, db_prefix, ns
+                client, rng, databases, tables, db_prefix, ns,
+                active_chaos=req_chaos,
             )
             sample_records.append(log_record)
             spans.append(span)

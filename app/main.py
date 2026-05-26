@@ -477,14 +477,6 @@ async def current_scenario(deployment_id: Optional[str] = None):
             "chaos_title": theme.chaos_title,
             "font_family": theme.font_family,
             "font_mono": theme.font_mono,
-            "scanline_effect": theme.scanline_effect,
-            "glow_effect": theme.glow_effect,
-            "grid_background": theme.grid_background,
-            "gradient_accent": theme.gradient_accent,
-        },
-        "countdown": {
-            "enabled": scenario.countdown_config.enabled,
-            "start_seconds": scenario.countdown_config.start_seconds,
         },
     }
 
@@ -641,48 +633,7 @@ async def system_status(deployment_id: Optional[str] = None):
         "services": inst.service_manager.get_all_status(),
         "generators": inst.service_manager.get_generator_status(),
         "chaos": inst.chaos_controller.get_status(),
-        "countdown": inst.service_manager.get_countdown(),
     }
-
-
-# ── Countdown Control ──────────────────────────────────────────────────────
-
-
-@app.post("/api/countdown/start")
-async def countdown_start(body: dict = {}):
-    inst = _get_instance(body.get("deployment_id") if body else None)
-    if not inst:
-        return JSONResponse(status_code=404, content={"error": "No active deployment"})
-    inst.service_manager.countdown_start()
-    return {"status": "started"}
-
-
-@app.post("/api/countdown/pause")
-async def countdown_pause(body: dict = {}):
-    inst = _get_instance(body.get("deployment_id") if body else None)
-    if not inst:
-        return JSONResponse(status_code=404, content={"error": "No active deployment"})
-    inst.service_manager.countdown_pause()
-    return {"status": "paused"}
-
-
-@app.post("/api/countdown/reset")
-async def countdown_reset(body: dict = {}):
-    inst = _get_instance(body.get("deployment_id") if body else None)
-    if not inst:
-        return JSONResponse(status_code=404, content={"error": "No active deployment"})
-    inst.service_manager.countdown_reset()
-    return {"status": "reset"}
-
-
-@app.post("/api/countdown/speed")
-async def countdown_speed(body: dict):
-    inst = _get_instance(body.get("deployment_id"))
-    if not inst:
-        return JSONResponse(status_code=404, content={"error": "No active deployment"})
-    speed = float(body.get("speed", 1.0))
-    inst.service_manager.countdown_set_speed(speed)
-    return {"status": "speed_set", "speed": speed}
 
 
 # ── Remediation endpoint (called by Elastic Workflow) ──────────────────────

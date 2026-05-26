@@ -223,31 +223,55 @@ def _histogram(
     }
 
 
-def _generate_metrics(state: JvmState, rng: random.Random) -> list:
+def _generate_metrics(state: JvmState, rng: random.Random, active_chaos: dict | None = None) -> list:
     state.tick()
     metrics = []
     MB = 1024 * 1024
 
+    # Channel tag dict — merged into every data point this scrape when chaos is active
+    chaos_attrs: dict = {}
+    if active_chaos:
+        chaos_attrs["chaos.channel"] = active_chaos["channel_id"]
+        if active_chaos.get("name"):
+            chaos_attrs["chaos.fault_type"] = active_chaos["name"]
+        if active_chaos.get("subsystem"):
+            chaos_attrs["chaos.subsystem"] = active_chaos["subsystem"]
+
+    def _ca(extra: dict | None = None) -> dict:
+        """Merge chaos_attrs into per-data-point attribute dict."""
+        if not chaos_attrs and not extra:
+            return {}
+        merged = dict(chaos_attrs)
+        if extra:
+            merged.update(extra)
+        return merged
+
     # ── CPU ────────────────────────────────────────────────────────────
-    metrics.append(_gauge("jvm.cpu.recent_utilization", "1", rng.uniform(0.05, 0.45)))
-    metrics.append(_gauge("jvm.cpu.time", "s", state.cpu_time_s))
-    metrics.append(_gauge("jvm.cpu.count", "{cpu}", 4.0))
+    cpu_util = rng.uniform(0.75, 0.98) if active_chaos else rng.uniform(0.05, 0.45)
+    metrics.append(_gauge("jvm.cpu.recent_utilization", "1", cpu_util, _ca()))
+    metrics.append(_gauge("jvm.cpu.time", "s", state.cpu_time_s, _ca()))
+    metrics.append(_gauge("jvm.cpu.count", "{cpu}", 4.0, _ca()))
 
     # ── Memory (per pool) ─────────────────────────────────────────────
     for pool_name, mem_type, limit_mb in ALL_POOLS:
         pool_attrs = {"jvm.memory.type": mem_type, "jvm.memory.pool.name": pool_name}
-        used_bytes = state.pool_used[pool_name] * MB
+        base_used = state.pool_used[pool_name] * MB
+        # Under chaos, push heap pools toward their limit
+        if active_chaos and mem_type == "heap":
+            used_bytes = min(float(limit_mb * MB) * rng.uniform(0.88, 0.97), base_used * rng.uniform(1.5, 2.2))
+        else:
+            used_bytes = base_used
         limit_bytes = float(limit_mb * MB)
         committed_bytes = min(limit_bytes, used_bytes * rng.uniform(1.1, 1.4))
         after_gc_bytes = used_bytes * rng.uniform(0.3, 0.7)
 
-        metrics.append(_gauge("jvm.memory.used", "By", used_bytes, pool_attrs))
+        metrics.append(_gauge("jvm.memory.used", "By", used_bytes, _ca(pool_attrs)))
         metrics.append(
-            _gauge("jvm.memory.committed", "By", committed_bytes, pool_attrs)
+            _gauge("jvm.memory.committed", "By", committed_bytes, _ca(pool_attrs))
         )
-        metrics.append(_gauge("jvm.memory.limit", "By", limit_bytes, pool_attrs))
+        metrics.append(_gauge("jvm.memory.limit", "By", limit_bytes, _ca(pool_attrs)))
         metrics.append(
-            _gauge("jvm.memory.used_after_last_gc", "By", after_gc_bytes, pool_attrs)
+            _gauge("jvm.memory.used_after_last_gc", "By", after_gc_bytes, _ca(pool_attrs))
         )
 
     # ── Threads ───────────────────────────────────────────────────────
@@ -260,29 +284,39 @@ def _generate_metrics(state: JvmState, rng: random.Random) -> list:
             elif thread_state == "waiting":
                 count = rng.randint(3, 15) if daemon else rng.randint(1, 4)
             else:  # blocked
-                count = rng.randint(0, 2) if daemon else rng.randint(0, 1)
+                # Spike blocked thread count under fault — characteristic of contention
+                count = rng.randint(8, 25) if active_chaos and daemon else (
+                    rng.randint(0, 2) if daemon else rng.randint(0, 1)
+                )
             metrics.append(
                 _gauge(
                     "jvm.thread.count",
                     "{thread}",
                     float(count),
-                    {"jvm.thread.state": thread_state, "jvm.thread.daemon": daemon},
+                    _ca({"jvm.thread.state": thread_state, "jvm.thread.daemon": daemon}),
                 )
             )
 
     # ── Classes ───────────────────────────────────────────────────────
     current_classes = state.classes_loaded_total - state.classes_unloaded_total
-    metrics.append(_gauge("jvm.class.count", "{class}", float(current_classes)))
+    metrics.append(_gauge("jvm.class.count", "{class}", float(current_classes), _ca()))
     metrics.append(
-        _gauge("jvm.class.loaded", "{class}", float(state.classes_loaded_total))
+        _gauge("jvm.class.loaded", "{class}", float(state.classes_loaded_total), _ca())
     )
     metrics.append(
-        _gauge("jvm.class.unloaded", "{class}", float(state.classes_unloaded_total))
+        _gauge("jvm.class.unloaded", "{class}", float(state.classes_unloaded_total), _ca())
     )
 
     # ── GC Duration (histogram) ──────────────────────────────────────
     for gc_name, gc_action in GC_TYPES:
         count, total_s = state.gc_cumulative[gc_name]
+        # Under chaos, simulate extra long-pause Old GC events bumping the sum
+        if active_chaos and "Old" in gc_name:
+            extra_pauses = rng.randint(2, 6)
+            for _ in range(extra_pauses):
+                total_s += rng.uniform(0.5, 2.0)
+                count += 1
+            state.gc_cumulative[gc_name] = (count, total_s)
         gc_attrs = {"jvm.gc.name": gc_name, "jvm.gc.action": gc_action}
         metrics.append(
             _histogram(
@@ -292,7 +326,7 @@ def _generate_metrics(state: JvmState, rng: random.Random) -> list:
                 total_s,
                 GC_HISTOGRAM_BOUNDS,
                 rng,
-                gc_attrs,
+                _ca(gc_attrs),
             )
         )
 
@@ -300,7 +334,8 @@ def _generate_metrics(state: JvmState, rng: random.Random) -> list:
 
 
 def run(
-    client: OTLPClient, stop_event: threading.Event, scenario_data: dict | None = None
+    client: OTLPClient, stop_event: threading.Event, scenario_data: dict | None = None,
+    chaos_controller=None,
 ) -> None:
     """Run JVM metrics generator loop until stop_event is set."""
     rng = random.Random()
@@ -323,6 +358,8 @@ def run(
         )
         return
 
+    _channel_registry: dict = scenario_data.get("channel_registry", {}) if scenario_data else {}
+
     _topology_data = None
     if scenario_data:
         from log_generators.infra_topology import build_topology as _build_infra_topology
@@ -332,16 +369,33 @@ def run(
     states = {name: JvmState(rng) for name, _ in java_services}
 
     logger.info(
-        "JVM metrics generator started (interval=%ds, services=%s)",
+        "JVM metrics generator started (interval=%ds, services=%s, chaos_aware=%s)",
         METRICS_INTERVAL,
         [name for name, _ in java_services],
+        chaos_controller is not None,
     )
 
     scrape_count = 0
     while not stop_event.is_set():
+        # Resolve per-service active chaos for this scrape
+        per_service_chaos: dict[str, dict] = {}
+        if chaos_controller and _channel_registry:
+            for ch_id in chaos_controller.get_active_channels():
+                ch = _channel_registry.get(ch_id)
+                if not ch:
+                    continue
+                affected = set(ch.get("affected_services", [])) | set(ch.get("cascade_services", []))
+                for svc in affected:
+                    if svc not in per_service_chaos:
+                        per_service_chaos[svc] = {
+                            "channel_id": ch_id,
+                            "name": ch.get("name"),
+                            "subsystem": ch.get("subsystem"),
+                        }
+
         resource_metrics = []
         for name, _ in java_services:
-            metrics = _generate_metrics(states[name], rng)
+            metrics = _generate_metrics(states[name], rng, active_chaos=per_service_chaos.get(name))
             resource_metrics.append(
                 {
                     "resource": resources[name],

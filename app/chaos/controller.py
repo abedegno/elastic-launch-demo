@@ -194,14 +194,12 @@ class ChaosController:
             ch["callback_url"] = ""
             ch["user_email"] = ""
 
-            # Recalculate infra spikes from remaining active channels
-            self._infra_spikes = {k: (1.0 if k == "latency_multiplier" else 0) for k in self._infra_spikes}
-            for ch_id, c in self._channels.items():
-                if c["state"] == ACTIVE:
-                    impact = self._channel_registry.get(ch_id, {}).get("infra_impact", {})
-                    for key, val in impact.items():
-                        if key in self._infra_spikes:
-                            self._infra_spikes[key] = max(self._infra_spikes[key], float(val))
+            # Only clear infra spikes when the last active channel resolves
+            any_active = any(c["state"] == ACTIVE for c in self._channels.values())
+            if not any_active:
+                self._infra_spikes = {
+                    k: (1.0 if k == "latency_multiplier" else 0) for k in self._infra_spikes
+                }
 
         # Write-through to SQLite
         if self._store and self._deployment_id:

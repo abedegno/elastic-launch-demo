@@ -6,7 +6,7 @@ import random
 import time
 from typing import Any
 
-from scenarios.base import BaseScenario, CountdownConfig, UITheme
+from scenarios.base import BaseScenario, UITheme
 
 
 class SpaceScenario(BaseScenario):
@@ -1159,7 +1159,6 @@ class SpaceScenario(BaseScenario):
             status_info="#00aaff",
             font_family="'JetBrains Mono', 'Fira Code', monospace",
             font_mono="'JetBrains Mono', 'Fira Code', monospace",
-            scanline_effect=True,
             chaos_title="Chaos Controller",
             service_label="System",
             channel_label="Channel",
@@ -1168,20 +1167,6 @@ class SpaceScenario(BaseScenario):
     @property
     def nominal_label(self) -> str:
         return "NOMINAL"
-
-    @property
-    def countdown_config(self) -> CountdownConfig:
-        return CountdownConfig(
-            enabled=True,
-            start_seconds=600,
-            speed=1.0,
-            phases={
-                "PRE-LAUNCH": (300, 9999),
-                "COUNTDOWN": (60, 300),
-                "FINAL-COUNTDOWN": (0, 60),
-                "LAUNCH": (0, 0),
-            },
-        )
 
     # ── Agent Config ──────────────────────────────────────────────────
 

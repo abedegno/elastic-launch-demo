@@ -184,11 +184,19 @@ class BaseService(ABC):
         message: str,
         extra_attrs: dict[str, Any] | None = None,
         event_name: str | None = None,
+        channel: int | None = None,
     ) -> None:
         attrs = self._base_log_attrs()
         if extra_attrs:
             attrs.update(extra_attrs)
-        trace_id, span_id = _trace_context_store.get(self.SERVICE_NAME)
+        # Prefer the per-channel error trace context when a channel is supplied
+        # (so fault logs link to an actual error trace, not last-seen-per-service).
+        trace_id: str | None = None
+        span_id: str | None = None
+        if channel is not None:
+            trace_id, span_id = _trace_context_store.get_for_channel(channel, self.SERVICE_NAME)
+        if not trace_id:
+            trace_id, span_id = _trace_context_store.get(self.SERVICE_NAME)
         record = self.otlp.build_log_record(
             severity=level,
             body=message,
@@ -293,7 +301,7 @@ class BaseService(ABC):
                         "deployment_id": self._ctx.scenario_id if self._ctx else "",
                     }
                 )
-            self.emit_log("ERROR", msg, attrs, event_name=ev_name)
+            self.emit_log("ERROR", msg, attrs, event_name=ev_name, channel=channel)
 
     def emit_cascade_logs(self, channel: int) -> None:
         """Emit warning logs for cascading effects (not matching the SE query)."""
@@ -314,7 +322,7 @@ class BaseService(ABC):
                 "system.status": "WARNING",
             }
         )
-        self.emit_log("WARN", random.choice(messages), attrs)
+        self.emit_log("WARN", random.choice(messages), attrs, channel=channel)
 
     def emit_infrastructure_events(self, channel: int) -> None:
         """Emit one-shot infrastructure/audit events when a channel fires.
@@ -355,6 +363,7 @@ class BaseService(ABC):
                 evt["body"],
                 attrs,
                 event_name=evt.get("event_name"),
+                channel=channel,
             )
 
     def reset_infrastructure_events(self) -> None:

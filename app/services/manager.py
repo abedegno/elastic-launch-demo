@@ -1,16 +1,12 @@
-"""Service Manager — starts/stops all simulated services, generators, and manages countdown."""
+"""Service Manager — starts/stops all simulated services and generators."""
 
 from __future__ import annotations
 
 import logging
 import threading
-import time
-from typing import Any, Optional
+from typing import Any
 
 from app.config import (
-    COUNTDOWN_ENABLED,
-    COUNTDOWN_SPEED,
-    COUNTDOWN_START_SECONDS,
     SERVICES,
     ACTIVE_SCENARIO,
 )
@@ -20,7 +16,7 @@ logger = logging.getLogger("nova7.manager")
 
 
 class ServiceManager:
-    """Manages all service instances, log generators, and the mission countdown clock."""
+    """Manages all service instances and log generators."""
 
     def __init__(
         self,
@@ -33,31 +29,6 @@ class ServiceManager:
         self.otlp = otlp_client or OTLPClient()
         self.es_bulk = ESBulkClient()
         self.services: dict[str, Any] = {}
-
-        # Countdown state — from context or module-level defaults
-        if ctx:
-            _countdown = ctx.scenario.countdown_config
-            self._countdown_total = (
-                _countdown.start_seconds if _countdown.enabled else 600
-            )
-            self._countdown_speed = _countdown.speed if _countdown.enabled else 1.0
-            self._countdown_enabled = _countdown.enabled
-            self._countdown_phases = _countdown.phases
-        else:
-            self._countdown_total = COUNTDOWN_START_SECONDS
-            self._countdown_speed = COUNTDOWN_SPEED
-            self._countdown_enabled = COUNTDOWN_ENABLED
-            self._countdown_phases = {
-                "PRE-LAUNCH": (300, 9999),
-                "COUNTDOWN": (60, 300),
-                "FINAL-COUNTDOWN": (0, 60),
-                "LAUNCH": (0, 0),
-            }
-
-        self._countdown_remaining = float(self._countdown_total)
-        self._countdown_running = False
-        self._countdown_thread: Optional[threading.Thread] = None
-        self._countdown_lock = threading.Lock()
         self._stop_event = threading.Event()
 
         # Generator threads
@@ -92,15 +63,11 @@ class ServiceManager:
     def start_all(self) -> None:
         for svc in self.services.values():
             svc.start()
-        if self._countdown_enabled:
-            self._start_countdown_thread()
         self._start_generators()
         logger.info("All %d services + generators started", len(self.services))
 
     def stop_all(self) -> None:
         self._stop_event.set()
-        if self._countdown_thread and self._countdown_thread.is_alive():
-            self._countdown_thread.join(timeout=3)
         for t in self._generator_threads:
             t.join(timeout=5)
         for svc in self.services.values():
@@ -157,6 +124,10 @@ class ServiceManager:
         common_args = (self.otlp, self._stop_event)
         common_kwargs = {"scenario_data": scenario_data} if scenario_data else {}
 
+        # Chaos-aware kwargs for infra log generators (nginx, mysql, jvm)
+        chaos_kwargs = dict(common_kwargs)
+        chaos_kwargs["chaos_controller"] = self.chaos_controller
+
         # Raw access-log generator uses ESBulkClient instead of OTLPClient
         raw_access_args = (self.es_bulk, self._stop_event)
         raw_access_kwargs = {"scenario_data": scenario_data} if scenario_data else {}
@@ -165,12 +136,12 @@ class ServiceManager:
             ("gen-traces", run_traces, trace_args, trace_kwargs),
             ("gen-host-metrics", run_metrics, host_args, host_kwargs),
             ("gen-k8s-metrics", run_k8s, k8s_args, k8s_kwargs),
-            ("gen-jvm-metrics", run_jvm, common_args, common_kwargs),
+            ("gen-jvm-metrics", run_jvm, common_args, chaos_kwargs),
             ("gen-vpc-flow", run_vpc, common_args, common_kwargs),
             ("gen-raw-access", run_raw_access, raw_access_args, raw_access_kwargs),
-            ("gen-nginx", run_nginx, common_args, common_kwargs),
+            ("gen-nginx", run_nginx, common_args, chaos_kwargs),
             ("gen-nginx-metrics", run_nginx_metrics, common_args, common_kwargs),
-            ("gen-mysql", run_mysql, common_args, common_kwargs),
+            ("gen-mysql", run_mysql, common_args, chaos_kwargs),
         ]
         for name, fn, args, kwargs in generators:
             t = threading.Thread(
@@ -190,70 +161,6 @@ class ServiceManager:
             t.name: "running" if t.is_alive() else "stopped"
             for t in self._generator_threads
         }
-
-    # ── Countdown ──────────────────────────────────────────────────────
-
-    def _start_countdown_thread(self) -> None:
-        self._countdown_thread = threading.Thread(
-            target=self._countdown_loop, name="countdown", daemon=True
-        )
-        self._countdown_thread.start()
-
-    def _countdown_loop(self) -> None:
-        last_tick = time.time()
-        while not self._stop_event.is_set():
-            now = time.time()
-            dt = now - last_tick
-            last_tick = now
-
-            with self._countdown_lock:
-                if self._countdown_running and self._countdown_remaining > 0:
-                    self._countdown_remaining -= dt * self._countdown_speed
-                    if self._countdown_remaining < 0:
-                        self._countdown_remaining = 0
-
-                    # Phase transitions based on countdown_config.phases
-                    remaining = self._countdown_remaining
-                    phase = "ACTIVE"
-                    for p_name, (p_min, p_max) in self._countdown_phases.items():
-                        if p_min <= remaining <= p_max:
-                            phase = p_name
-                            break
-
-                    for svc in self.services.values():
-                        svc.set_phase(phase)
-
-            self._stop_event.wait(0.5)
-
-    def countdown_start(self) -> None:
-        with self._countdown_lock:
-            self._countdown_running = True
-
-    def countdown_pause(self) -> None:
-        with self._countdown_lock:
-            self._countdown_running = False
-
-    def countdown_reset(self) -> None:
-        with self._countdown_lock:
-            self._countdown_remaining = float(self._countdown_total)
-            self._countdown_running = False
-
-    def countdown_set_speed(self, speed: float) -> None:
-        with self._countdown_lock:
-            self._countdown_speed = max(0.1, min(100.0, speed))
-
-    def get_countdown(self) -> dict[str, Any]:
-        with self._countdown_lock:
-            remaining = max(0.0, self._countdown_remaining)
-            minutes = int(remaining // 60)
-            seconds = int(remaining % 60)
-            return {
-                "remaining_seconds": round(remaining, 1),
-                "display": f"T-{minutes:02d}:{seconds:02d}",
-                "running": self._countdown_running,
-                "speed": self._countdown_speed,
-                "enabled": self._countdown_enabled,
-            }
 
     def get_all_status(self) -> dict[str, Any]:
         return {name: svc.get_status() for name, svc in self.services.items()}

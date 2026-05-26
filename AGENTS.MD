@@ -1093,9 +1093,24 @@ POST /api/actions/connector
 
 42. **Dashboard panel data view ID must exactly match the deployed data view ID** — Lens by-value panels embed `{"id": "<data_view_id>", "type": "index-pattern"}` references inside `embeddableConfig.attributes.references`. Kibana resolves these at render time. If the ID in the generated NDJSON does not match an existing data view, Kibana silently omits the affected panels — the dashboard imports successfully with HTTP 200 and no logged errors, but panels that use the missing data view are blank. When changing a data view ID (e.g. from `"logs*"` to `"logs.otel.gaming"`), the dashboard generator must be updated in the same change. In `generate_exec_dashboard.py`, the local variable `DATA_VIEW_ID_LOGS = f"logs.otel.{namespace}"` at the top of `_build_dashboard_ndjson()` ensures the generated references always match what `deployer_views.py` actually creates.
 
-43. **Scope all ES|QL queries to the namespace child stream, not the root stream** — All ES|QL queries in agent tools, workflows, dashboards, and significant events should use `FROM logs.otel.{ns},logs.otel.{ns}.*` (e.g. `logs.otel.gaming,logs.otel.gaming.*`), not `FROM logs.otel,logs.otel.*`. The child stream is created by forking `logs.otel` on deployment and contains only that scenario's logs. Querying the root stream in a multi-scenario environment returns data from all scenarios. `app/telemetry.py` remains pointed at `logs.otel` for OTLP ingestion — the fork routing is server-side and transparent to the sender.
+43. **Scope all ES|QL queries to the namespace child stream, not the root stream** — All ES|QL queries in agent tools, workflows, dashboards, and significant events should use `FROM logs.otel.{ns},logs.otel.{ns}.*` (e.g. `logs.otel.gaming,logs.otel.gaming.*`), not `FROM logs.otel,logs.otel.*`. The child stream is created by forking `logs.otel` on deployment and contains only that scenario's logs. Querying the root stream in a multi-scenario environment returns data from all scenarios. `app/telemetry.py` remains pointed at `logs.otel` for OTLP ingestion — the fork routing is server-side and transparent to the sender. A parallel `logs.ecs.{ns}` child stream is also created for ECS-formatted logs (backfilled at deploy time by `deployer_backfill.py`); it follows the same per-namespace fork pattern.
 
 44. **All scenario-specific data belongs in the scenario's own folder** — Every property that varies by scenario (display text, KPI fields, service names, thresholds, etc.) must be defined as a property on the scenario class in `scenarios/<id>/scenario.py`, not as a lookup dict or `if/elif` block in shared code outside `scenarios/`. The base class in `scenarios/base.py` provides the default/fallback; each scenario overrides it. The dashboard generator, deployer, and agent code must call `scenario.<property>` — never key off `scenario.scenario_id` to branch on scenario-specific values. This keeps all scenario content co-located and ensures adding a new scenario requires changes only in `scenarios/<new_id>/`.
+
+45. **Three deployer mixins added at steps 5, 15, and 17** — `deployer_integrations.py` (step 5) installs OTel integrations from the Elastic package registry before rolling out telemetry. `deployer_backfill.py` (step 15) backfills ECS-formatted logs into `logs.ecs.{ns}` to pre-populate the ECS log stream for the scenario. `deployer_aiops.py` (step 17) creates ML jobs for log rate analysis and message categorization on `logs.otel.{ns}`. These three mixins were added after the original step table was written — any references to "step N" in older notes for steps 6+ are off by one or more from the current indices.
+
+---
+
+## Claude Code Skills
+
+Two Claude Code skills are available for extending this project. Invoke with `/add-scenario` or `/add-fault-channel` in Claude Code.
+
+| Skill | When to use | Files created/modified |
+|---|---|---|
+| `/add-scenario` | Add a new industry-vertical scenario with 9 services and 20 fault channels | Creates `scenarios/<id>/` folder (scenario.py, executive_kpis.py, 9 service files) |
+| `/add-fault-channel` | Replace one fault channel in an existing scenario | Modifies `scenarios/<id>/scenario.py` only (4 coordinated edits) |
+
+Both skills enforce the same guardrails: scope is limited to `scenarios/<id>/`, channel 1–15 must be HITL, channels 16–20 must be plausibly auto-remediable. See `.claude/skills/add-scenario/GUARDRAILS.md` and `.claude/skills/add-fault-channel/GUARDRAILS.md` for the full rule set.
 
 ---
 
@@ -1105,7 +1120,7 @@ POST /api/actions/connector
 
 The deployer is composed of mixins (`SloMixin`, `AlertingMixin`, `DashboardMixin`, etc.), each contributing one or more numbered steps to `DeployProgress`. Steps are referenced by index via `self._step(n)`. Adding a new step at any index requires bumping all `_step()` calls in every file with a higher index.
 
-**Current step index assignments (as of 2026-04-22):**
+**Current step index assignments (as of 2026-05-26):**
 | Index | Step | File |
 |-------|------|------|
 | 0 | Connectivity check | `deployer.py` |
@@ -1113,19 +1128,22 @@ The deployer is composed of mixins (`SloMixin`, `AlertingMixin`, `DashboardMixin
 | 2 | Derive OTLP endpoint | `deployer_otlp.py` |
 | 3 | Clean up old artifacts | `deployer.py` |
 | 4 | Configure platform settings | `deployer_platform.py` |
-| 5 | Generate APM rollup data | `deployer_apm.py` |
-| 6 | Deploy workflows | `deployer_workflows.py` |
-| 7 | Index knowledge base | `deployer_kb.py` |
-| 8 | Deploy AI agent tools + skills | `deployer_agent.py` + `deployer_skills.py` |
-| 9 | Create AI agent | `deployer_agent.py` |
-| 10 | Create significant events | `deployer_streams.py` |
-| 11 | Create data views | `deployer_views.py` |
-| 12 | Import executive dashboard | `deployer_dashboard.py` |
-| 13 | Create alert rules | `deployer_alerting.py` |
-| 14 | Enable APM anomaly detection | `deployer_apm.py` |
-| 15 | Create SLOs | `deployer_slos.py` |
+| 5 | Install OTel integrations | `deployer_integrations.py` |
+| 6 | Generate APM rollup data | `deployer_apm.py` |
+| 7 | Deploy workflows | `deployer_workflows.py` |
+| 8 | Index knowledge base | `deployer_kb.py` |
+| 9 | Deploy AI agent tools + skills | `deployer_agent.py` + `deployer_skills.py` |
+| 10 | Create AI agent | `deployer_agent.py` |
+| 11 | Create significant events | `deployer_streams.py` |
+| 12 | Create data views | `deployer_views.py` |
+| 13 | Import executive dashboard | `deployer_dashboard.py` |
+| 14 | Create alert rules | `deployer_alerting.py` |
+| 15 | ECS log backfill | `deployer_backfill.py` |
+| 16 | Enable APM anomaly detection | `deployer_apm.py` |
+| 17 | Create logs ML jobs (rate + categorization) | `deployer_aiops.py` |
+| 18 | Create SLOs | `deployer_slos.py` |
 
-**Skills deploy as part of step 8** — `_deploy_tools()` calls `_deploy_skills()` after deploying all tools; `step.items_total` is set to `len(tools) + len(skill_defs)`. No step index bump required.
+**Skills deploy as part of step 9** — `_deploy_tools()` calls `_deploy_skills()` after deploying all tools; `step.items_total` is set to `len(tools) + len(skill_defs)`. No step index bump required.
 
 **Gotcha:** When inserting a step, update `_step(n)` calls in every mixin file that uses a higher index. There are typically 9+ files involved.
 
@@ -1161,17 +1179,18 @@ def _derive_elastic_url(kibana_url: str, api_key: str, explicit: str = "") -> st
 
 ### OTLP Endpoint Derivation
 
-`_derive_otlp_endpoint(client)` in `elastic_config/deployer.py` tries three strategies in order:
+`_derive_otlp_endpoint(client)` in `elastic_config/deployer_otlp.py` tries two strategies in order (retrying up to 4 times with 5 s between attempts to handle newly provisioned clusters):
 
-1. **`OTLP_ENDPOINT` env var** — if set explicitly, used as-is; derivation is skipped entirely
-2. **Cluster settings API** — `GET {elastic_url}/_cluster/settings?include_defaults=true`, extracts `persistent.cluster.metadata.display_name` (falls back to `defaults.cluster.name`), converts `"Name (ID)"` → `"Name-ID"`, combines with the cloud suffix from the ES URL → `https://{alias}.ingest.{suffix}:443`
-3. **URL substitution** — replace `.es.` with `.ingest.` in the ES URL, append `:443` if missing
+1. **Cluster settings API** — `GET {elastic_url}/_cluster/settings`, extracts `persistent.cluster.metadata.display_name` (falls back to `defaults.cluster.name`), converts `"Name (ID)"` → `"Name-ID"`, combines with the cloud suffix from the ES URL → `https://{alias}.ingest.{suffix}:443`
+2. **URL substitution** — replace `.es.` with `.ingest.` in the ES URL, append `:443` if missing
 
-Each candidate from strategies 2 and 3 is verified with `_verify_otlp_candidate(client, url)`:
+The `OTLP_ENDPOINT` env var is **not** handled inside this function — it is checked by callers before calling `_derive_otlp_endpoint`.
+
+Each candidate is verified with `_verify_otlp_candidate(client, url)`:
 ```
 POST {url}/v1/logs  body: {"resourceLogs": []}
 ```
-Returns the first candidate that responds with HTTP 200. If both probes fail, returns `None`.
+Returns the first candidate whose `resp.status_code < 500` (any non-5xx, including 4xx, counts as reachable). If all attempts fail, returns `None`.
 
 **Fallback in auto-deploy** — If the deployer returns an empty `otlp_endpoint` (probes failed),
 `app/main.py` uses a pre-computed fallback derived from `ELASTIC_URL` at startup (`.es.` → `.ingest.:443`) without a live probe. Priority chain in auto-deploy:
@@ -1430,7 +1449,7 @@ Use `urllib.parse.quote(view_id, safe="")` in Python. The Logs data view ID (`lo
 | 1 | Delete workflows |
 | 2 | Delete alert rules |
 | 3 | Delete service stream |
-| 4 | Delete AI agent, tools, skills & conversations |
+| 4 | Delete AI agent, tools, skills, and conversations |
 | 5 | Delete knowledge base |
 | 6 | Delete audit indices |
 | 7 | Delete dashboard |

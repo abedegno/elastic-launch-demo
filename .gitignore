@@ -68,7 +68,11 @@ elastic_config/dashboards/exec-dashboard.ndjson
 data/
 
 # ---------------------- Claude Code -------------------------
-.claude/
+# Track skills/ but ignore everything else under .claude/
+!.claude/
+.claude/*
+!.claude/skills/
+!.claude/skills/**
 
 # ---------------------- Obsidian -------------------------
 .obsidian/
