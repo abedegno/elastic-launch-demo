@@ -6,7 +6,7 @@ import random
 import time
 from typing import Any
 
-from scenarios.base import BaseScenario, CountdownConfig, UITheme
+from scenarios.base import BaseScenario, UITheme
 
 
 class GCPScenario(BaseScenario):
@@ -1373,13 +1373,9 @@ class GCPScenario(BaseScenario):
             status_critical="#EA4335",      # Google Red
             status_info="#4285F4",          # Google Blue
             font_family="'Google Sans', 'Inter', system-ui, sans-serif",
-            grid_background=True,
             chaos_title="Incident Simulator",
         )
 
-    @property
-    def countdown_config(self) -> CountdownConfig:
-        return CountdownConfig(enabled=False)
 
     # ── Agent Config ──────────────────────────────────────────────────
 

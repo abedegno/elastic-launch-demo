@@ -11,7 +11,7 @@ import secrets
 import time
 from typing import Any
 
-from scenarios.base import BaseScenario, CountdownConfig, UITheme
+from scenarios.base import BaseScenario, UITheme
 
 
 class ManufacturingScenario(BaseScenario):
@@ -1180,9 +1180,6 @@ class ManufacturingScenario(BaseScenario):
             channel_label="Incident",
         )
 
-    @property
-    def countdown_config(self) -> CountdownConfig:
-        return CountdownConfig(enabled=False)
 
     # -- Agent Config -----------------------------------------------------------
 

@@ -7,7 +7,7 @@ import random
 import time
 from typing import Any
 
-from scenarios.base import BaseScenario, CountdownConfig, UITheme
+from scenarios.base import BaseScenario, UITheme
 
 
 class FinancialScenario(BaseScenario):
@@ -979,9 +979,6 @@ class FinancialScenario(BaseScenario):
             channel_label="Channel",
         )
 
-    @property
-    def countdown_config(self) -> CountdownConfig:
-        return CountdownConfig(enabled=False)
 
     # ── Agent Config ──────────────────────────────────────────────────
 

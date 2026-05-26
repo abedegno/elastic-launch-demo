@@ -6,7 +6,7 @@ import random
 import time
 from typing import Any
 
-from scenarios.base import BaseScenario, CountdownConfig, UITheme
+from scenarios.base import BaseScenario, UITheme
 
 
 class GamingScenario(BaseScenario):
@@ -1405,16 +1405,11 @@ class GamingScenario(BaseScenario):
             status_critical="#ef4444",
             status_info="#58a6ff",
             font_family="'Inter', system-ui, sans-serif",
-            glow_effect=True,
-            gradient_accent="linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
             chaos_title="Chaos Engineering Console",
             service_label="Service",
             channel_label="Channel",
         )
 
-    @property
-    def countdown_config(self) -> CountdownConfig:
-        return CountdownConfig(enabled=False)
 
     # ── Agent Config ──────────────────────────────────────────────────
 

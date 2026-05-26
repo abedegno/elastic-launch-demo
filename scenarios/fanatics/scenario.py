@@ -6,7 +6,7 @@ import random
 import time
 from typing import Any
 
-from scenarios.base import BaseScenario, CountdownConfig, UITheme
+from scenarios.base import BaseScenario, UITheme
 
 
 
@@ -1226,13 +1226,9 @@ class FanaticsScenario(BaseScenario):
             status_critical="#f85149",
             status_info="#58a6ff",
             font_family="'Inter', system-ui, sans-serif",
-            grid_background=True,
             chaos_title="Incident Simulator",
         )
 
-    @property
-    def countdown_config(self) -> CountdownConfig:
-        return CountdownConfig(enabled=False)
 
     # ── Agent Config ──────────────────────────────────────────────────
 

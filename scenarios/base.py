@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -29,12 +29,6 @@ class UITheme:
     font_family: str = "'Inter', 'Segoe UI', system-ui, sans-serif"
     font_mono: str = "'JetBrains Mono', 'Fira Code', monospace"
     font_size_base: str = "14px"
-
-    # Effects
-    scanline_effect: bool = False  # CRT scanline overlay (Space theme)
-    glow_effect: bool = False  # Neon glow on accents (Gaming theme)
-    grid_background: bool = False  # Subtle grid pattern (Fanatics theme)
-    gradient_accent: str = ""  # CSS gradient for accent areas
 
     # Terminology
     chaos_title: str = "Incident Simulator"
@@ -63,18 +57,6 @@ class UITheme:
                 f"  --font-size-base: {self.font_size_base};",
             ]
         )
-
-
-@dataclass
-class CountdownConfig:
-    """Optional countdown timer configuration."""
-
-    enabled: bool = False
-    start_seconds: int = 600
-    speed: float = 1.0
-    phases: dict[str, tuple[int, int]] = field(default_factory=dict)
-    # phases maps phase_name -> (min_remaining, max_remaining)
-    # e.g. {"PRE-LAUNCH": (300, 9999), "COUNTDOWN": (60, 300), ...}
 
 
 class BaseScenario(ABC):
@@ -204,11 +186,6 @@ class BaseScenario(ABC):
     def theme(self) -> UITheme:
         """Visual theme configuration."""
         ...
-
-    @property
-    def countdown_config(self) -> CountdownConfig:
-        """Optional countdown timer. Override if scenario has one."""
-        return CountdownConfig(enabled=False)
 
     @property
     def nominal_label(self) -> str:
