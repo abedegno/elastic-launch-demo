@@ -16,6 +16,8 @@ Reference source: [scenarios/base.py](scenarios/base.py)
 | `namespace` | ✅ | `str` | Short telemetry prefix. Used in index names: `logs.otel.<ns>`. E.g. `"logistics"` |
 | `scenario_icon` | optional | `str` | Emoji. Default `"🔧"` |
 | `sort_order` | optional | `int` | Lower = earlier. Default 999. Use 10–99 for new scenarios. |
+| `nominal_label` | optional | `str` | Label for the "nominal" state in the UI. Default `"Nominal"`. Override if the vertical uses different terminology (e.g. `"Green"`, `"Stable"`). |
+| `get_correlation_attribute` | optional | `str` | Returns a single attribute key whose value best correlates faults across services. Override when the vertical has a natural correlation ID (e.g. `"mission.id"`, `"order.id"`). Default returns `"chaos.channel"`. Signature: `def get_correlation_attribute(self) -> str`. |
 
 ---
 

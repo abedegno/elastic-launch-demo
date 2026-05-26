@@ -42,7 +42,7 @@ Choose from 6 industry verticals — space launch, sports streaming, financial s
 
 ## Key Features
 
-- **6 industry scenarios** — space launch, sports streaming, financial services, healthcare, gaming, insurance
+- **9 industry scenarios** — space launch, sports streaming, financial trading, healthcare, live gaming, retail banking, e-commerce, GCP network ops, and manufacturing
 - **9 simulated microservices per scenario** across 3 cloud providers (AWS, GCP, Azure)
 - **Real OpenTelemetry telemetry** — logs, metrics, and traces sent directly via OTLP
 - **20 independent fault channels** per scenario covering scenario-specific subsystems
@@ -61,14 +61,17 @@ Choose from 6 industry verticals — space launch, sports streaming, financial s
 
 | ID | Name | Industry | Namespace |
 |----|------|----------|-----------|
-| space | NOVA-7 Launch Control | Space / Aerospace | nova7 |
-| fanatics | Fanatics Live | Sports Streaming | fanatics |
-| financial | Financial Services Platform | Financial Services | finserv |
-| healthcare | Healthcare Platform | Healthcare | healthcare |
-| gaming | Gaming Platform | Gaming | gaming |
-| banking | Retail Banking Platform | Insurance / Banking | banking |
+| space | NOVA-7 Space Mission | Space / Aerospace | nova7 |
+| fanatics | Fanatics Collectibles | Sports Streaming | fanatics |
+| financial | Financial Trading Platform | Financial Services | finserv |
+| healthcare | Healthcare Systems | Healthcare | healthcare |
+| gaming | Live Gaming Platform | Gaming | gaming |
+| banking | Retail Banking Platform | Retail Banking | banking |
+| ecommerce | Global Commerce Platform | E-Commerce | ecommerce |
+| manufacturing | Manufacturing Operations Platform | Manufacturing / OT | mfg |
+| gcp | Google Cloud Network Operations | GCP / Networking | gcpnet |
 
-Each scenario provides its own services, fault channels, UI theme, terminology, and countdown configuration. The scenario framework (`scenarios/base.py`) defines the interface; each scenario directory implements it.
+Each scenario provides its own services, fault channels, UI theme, terminology, and configuration. The scenario framework (`scenarios/base.py`) defines the interface; each scenario directory implements it.
 
 ---
 
@@ -88,6 +91,8 @@ pip install -r requirements.txt
 ### 3. Start the App
 
 ```bash
+./start.sh
+# or manually:
 python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
@@ -134,20 +139,20 @@ Each scenario defines 20 fault channels. Here are the channels for the default *
 | 4 | GPS Multipath Interference | guidance | GCP |
 | 5 | IMU Synchronization Loss | guidance | GCP |
 | 6 | Star Tracker Alignment Fault | guidance | GCP |
-| 7 | S-Band Signal Degradation | communications | GCP |
+| 7 | Flight Termination System Check Failure | safety | Azure |
 | 8 | X-Band Packet Loss | communications | GCP |
 | 9 | UHF Antenna Pointing Error | communications | GCP |
 | 10 | Payload Thermal Excursion | payload | GCP |
 | 11 | Payload Vibration Anomaly | payload | GCP |
-| 12 | Cross-Cloud Relay Latency | relay | Azure |
+| 12 | Pad Hydraulic Pressure Loss | ground | AWS |
 | 13 | Relay Packet Corruption | relay | Azure |
 | 14 | Ground Power Bus Fault | ground | AWS |
-| 15 | Weather Station Data Gap | ground | AWS |
-| 16 | Pad Hydraulic Pressure Loss | ground | AWS |
+| 15 | Range Safety Tracking Loss | safety | Azure |
+| 16 | Cross-Cloud Relay Latency | relay | Azure |
 | 17 | Sensor Validation Pipeline Stall | validation | Azure |
 | 18 | Calibration Epoch Mismatch | validation | Azure |
-| 19 | FTS Check Failure | safety | Azure |
-| 20 | Range Safety Tracking Loss | safety | Azure |
+| 19 | S-Band Signal Degradation | communications | GCP |
+| 20 | Weather Station Data Gap | ground | AWS |
 
 See [docs/CHANNEL_REFERENCE.md](docs/CHANNEL_REFERENCE.md) for full details. Other scenarios have different channel names and subsystems appropriate to their industry.
 
@@ -179,9 +184,13 @@ POST /api/setup/test-connection     # Test Elastic Cloud connectivity
 POST /api/setup/launch              # Deploy a scenario to Elastic
 GET  /api/setup/progress            # Deployment progress (SSE)
 GET  /api/setup/detect              # Auto-detect Elastic credentials
+GET  /api/setup/env-creds           # Check if env creds are pre-configured
+GET  /api/setup/active-deploys      # List in-progress deployments
+GET  /api/setup/auto-deploy         # Auto-deploy status (in_progress, deployment_id)
 POST /api/setup/teardown            # Tear down Elastic resources
 POST /api/setup/stop-and-teardown   # Stop telemetry and tear down
 GET  /api/setup/teardown-progress   # Teardown progress
+GET  /api/setup/active-teardowns    # List in-progress teardowns
 ```
 
 ### Chaos Control
@@ -191,16 +200,16 @@ POST /api/chaos/trigger             # {"channel": 1}
 POST /api/chaos/resolve             # {"channel": 1}
 GET  /api/chaos/status              # All channels
 GET  /api/chaos/status/{channel}    # Single channel
+POST /api/chaos/spikes              # Inject infrastructure spike
+GET  /api/chaos/spikes              # Current spike state
+GET  /api/chaos/session/validate    # Validate chaos session token
 ```
 
-### Remediation & Countdown
+### Remediation
 
 ```
 POST /api/remediate/{channel}       # Resolve a fault channel
-POST /api/countdown/start           # Start countdown
-POST /api/countdown/pause           # Pause countdown
-POST /api/countdown/reset           # Reset countdown
-POST /api/countdown/speed           # {"speed": 2.0}
+POST /api/daily-update              # Trigger the daily-update workflow
 ```
 
 ### Notifications
@@ -225,27 +234,36 @@ elastic-launch-demo/
 │   ├── instance.py                  # ScenarioInstance (running deployment)
 │   ├── registry.py                  # InstanceRegistry (multi-tenancy)
 │   ├── store.py                     # DeploymentStore (SQLite persistence)
+│   ├── op_queue.py                  # Remediation operation queue
 │   ├── services/                    # 9 simulated microservices
 │   │   ├── base_service.py          # Abstract base with telemetry helpers
-│   │   ├── manager.py              # Service lifecycle manager
+│   │   ├── manager.py               # Service lifecycle manager
 │   │   └── *.py                     # Individual service implementations
 │   ├── chaos/                       # Chaos injection system
-│   │   ├── controller.py           # Channel state management
-│   │   └── channels.py             # Channel definitions helper
+│   │   ├── controller.py            # Channel state management
+│   │   ├── channels.py              # Channel definitions helper
+│   │   └── remediation_poller.py    # Polls op_queue and calls controller.resolve()
 │   ├── selector/static/             # Scenario selector UI (front page)
 │   ├── chaos_ui/static/             # Chaos controller UI
 │   └── notify/                      # Notification handlers
+│       ├── email_handler.py         # Elastic Cloud SMTP
 │       ├── twilio_handler.py        # SMS + voice via Twilio
 │       └── slack_handler.py         # Slack webhooks
 ├── scenarios/
-│   ├── base.py                      # BaseScenario ABC, UITheme, CountdownConfig
+│   ├── base.py                      # BaseScenario ABC, UITheme
 │   ├── __init__.py                  # ScenarioRegistry with auto-discovery
-│   ├── space/                       # NOVA-7 space launch scenario
-│   ├── fanatics/                    # Sports streaming scenario
-│   ├── financial/                   # Financial services scenario
-│   ├── healthcare/                  # Healthcare scenario
-│   ├── gaming/                      # Gaming scenario
-│   └── banking/                     # Insurance/banking scenario
+│   ├── space/                       # NOVA-7 Space Mission
+│   │   ├── scenario.py
+│   │   ├── executive_kpis.py
+│   │   └── services/
+│   ├── fanatics/                    # Fanatics Collectibles (sports streaming)
+│   ├── financial/                   # Financial Trading Platform
+│   ├── healthcare/                  # Healthcare Systems
+│   ├── gaming/                      # Live Gaming Platform
+│   ├── banking/                     # Retail Banking Platform
+│   ├── ecommerce/                   # Global Commerce Platform
+│   ├── manufacturing/               # Manufacturing Operations Platform
+│   └── gcp/                         # Google Cloud Network Operations
 ├── log_generators/
 │   ├── host_metrics_generator.py    # system.* host metrics (3 hosts)
 │   ├── k8s_metrics_generator.py     # Kubernetes node/pod/container metrics
@@ -253,24 +271,45 @@ elastic-launch-demo/
 │   ├── nginx_log_generator.py       # Nginx access/error logs
 │   ├── mysql_log_generator.py       # MySQL query logs
 │   ├── vpc_flow_generator.py        # VPC flow logs
-│   └── trace_generator.py          # Distributed traces
+│   ├── jvm_metrics_generator.py     # JVM metrics for Java services
+│   ├── raw_access_log_generator.py  # Raw HTTP access logs
+│   ├── infra_topology.py            # Infrastructure topology helpers
+│   └── trace_generator.py           # Distributed traces
 ├── elastic_config/
-│   ├── deployer.py                  # Python deployer (provisions Elastic resources)
+│   ├── deployer.py                  # Orchestrates all deploy/teardown steps
+│   ├── deployer_base.py             # Shared mixin base
+│   ├── deployer_agent.py            # AI agent + tools + skills
+│   ├── deployer_aiops.py            # Logs ML jobs (rate + categorization)
+│   ├── deployer_alerting.py         # Alert rules
+│   ├── deployer_apm.py              # APM rollup + anomaly detection
+│   ├── deployer_backfill.py         # ECS log backfill
+│   ├── deployer_dashboard.py        # Executive dashboard import
+│   ├── deployer_integrations.py     # OTel integrations install
+│   ├── deployer_kb.py               # Knowledge base indexing
+│   ├── deployer_otlp.py             # OTLP endpoint derivation + verification
+│   ├── deployer_platform.py         # Platform settings
+│   ├── deployer_skills.py           # Agent Builder skills
+│   ├── deployer_slos.py             # SLO creation
+│   ├── deployer_streams.py          # Significant events + stream forks
+│   ├── deployer_views.py            # Data views
+│   ├── deployer_workflows.py        # Workflow YAML deploy
+│   ├── apm_rollup.py                # APM rollup data helper
 │   ├── workflows/                   # Workflow YAML templates
 │   └── dashboards/                  # Executive dashboard generator
 ├── docs/
-│   ├── DEMO_SCRIPT.md              # Presenter talk track
-│   ├── SE_QUICK_START.md           # Quick start for SEs
-│   ├── SETUP_GUIDE.md             # Full deployment guide
-│   ├── CHANNEL_REFERENCE.md       # Channel details (space scenario)
-│   └── TROUBLESHOOTING.md         # Common issues and solutions
-├── start.sh                        # Start the app
-├── stop.sh                         # Stop the app
-├── validate.sh                     # Comprehensive validation
-├── requirements.txt                # Python dependencies
-├── .env.example                    # Environment variable template
-├── AGENTS.MD                       # Full Kibana/ES API reference
-└── README.md                       # This file
+│   ├── DEMO_SCRIPT.md               # Presenter talk track
+│   ├── SE_QUICK_START.md            # Quick start for SEs
+│   ├── SETUP_GUIDE.md               # Full deployment guide
+│   ├── CHANNEL_REFERENCE.md         # Channel details (space scenario)
+│   └── TROUBLESHOOTING.md           # Common issues and solutions
+├── start.sh                         # Start the app (backgrounds, logs to /tmp/nova7.log)
+├── stop.sh                          # Stop the app
+├── validate.sh                      # Comprehensive validation
+├── Dockerfile                       # Container image
+├── requirements.txt                 # Python dependencies
+├── .env.example                     # Environment variable template
+├── AGENTS.MD                        # Full Kibana/ES API reference
+└── README.md                        # This file
 ```
 
 ---

@@ -32,7 +32,7 @@ Run the following for every scenario folder (excluding `space`):
 git log -1 --format="%cI %f" -- scenarios/<id>/scenario.py
 ```
 
-Pick the scenario with the most recent commit timestamp. Read the full `scenarios/<id>/scenario.py` of the winner. That file is your structural template for the shapes of `services`, `channel_registry`, `hosts`, `k8s_clusters`, `service_topology`, `entry_endpoints`, `db_operations`, `get_trace_attributes`, `get_rca_clues`, `get_fault_params`, and `executive_kpis`.
+Pick the scenario with the most recent commit timestamp — on a tie, use `fanatics`. Read the full `scenarios/<id>/scenario.py` of the winner. That file is your structural template for the shapes of `services`, `channel_registry`, `hosts`, `k8s_clusters`, `service_topology`, `entry_endpoints`, `db_operations`, `get_trace_attributes`, `get_rca_clues`, `get_fault_params`, and `executive_kpis`.
 
 Also read [CONTRACT.md](.claude/skills/add-scenario/CONTRACT.md) now as a generation checklist.
 
@@ -57,7 +57,7 @@ The draft must cover:
 
 **20 fault channels summary** — channel number, name, subsystem, and one-line description
 - Channels 1–15: HITL faults (human must approve remediation). These should be the "interesting" investigation stories — data corruption, novel anomalies, multi-system cascades, regulatory/compliance violations, fraud signals, anything that benefits from an SRE's judgment.
-- Channels 16–20: Auto-remediate faults. These MUST be faults that would plausibly be handled automatically in a real production runbook: pod restart on OOM, autoscaler bumping replicas under CPU spike, circuit-breaker tripping a stuck upstream, cache flush after TTL expiry, credential/token rotation, certificate auto-renewal, budget cap reset, cache warmup. Do NOT put investigation-worthy faults here. Validate this choice against the rule: "Would a real on-call team let this auto-resolve without human review?"
+- Channels 16–20: Auto-remediate faults — must be plausible unattended runbook actions (pod restart, cache flush, cert renewal, circuit-breaker reset, etc.). See [GUARDRAILS.md](GUARDRAILS.md) §6 for the full rule and validation question.
 
 **Theme sketch** — primary accent color, `chaos_title`, `service_label`, `channel_label`
 
@@ -91,56 +91,13 @@ scenarios/<id>/services/<svc2>.py
 
 Follow this exact top-level structure, in this order:
 
+Match the section order and structure of the reference scenario exactly. The module must end with:
+
 ```python
-"""<Scenario Display Name> scenario — <one-line description>."""
-
-from __future__ import annotations
-
-import random
-import time
-from typing import Any
-
-from scenarios.base import BaseScenario, CountdownConfig, UITheme
-
-
-class <Name>Scenario(BaseScenario):
-    """<Class docstring>."""
-
-    # ── Identity ──────────────────────────────────────────────────────
-    # scenario_id, scenario_icon, scenario_name, scenario_description, namespace, sort_order
-    # executive_kpi_emitter_service_name, executive_dashboard_intro
-    # executive_kpi_sections, executive_trend_charts
-    # raw_log_profile
-
-    # ── Services ──────────────────────────────────────────────────────
-    # services (9 services)
-
-    # ── Channel Registry ──────────────────────────────────────────────
-    # channel_registry (20 channels)
-
-    # ── Topology ──────────────────────────────────────────────────────
-    # service_topology, entry_endpoints, db_operations
-
-    # ── Infrastructure ────────────────────────────────────────────────
-    # hosts (3), k8s_clusters (3)
-
-    # ── Theme ─────────────────────────────────────────────────────────
-    # theme, countdown_config
-
-    # ── Agent Config ──────────────────────────────────────────────────
-    # agent_config, assessment_tool_config, knowledge_base_docs
-
-    # ── Service Classes ───────────────────────────────────────────────
-    # get_service_classes() — lazy imports
-
-    # ── Trace Attributes & RCA ────────────────────────────────────────
-    # get_trace_attributes, get_rca_clues, get_fault_params
-
-
 scenario = <Name>Scenario()
 ```
 
-The module-level `scenario = <Name>Scenario()` at the bottom is required for auto-discovery.
+This line is required for auto-discovery by `scenarios/__init__.py`.
 
 ### `services/__init__.py`
 
@@ -185,21 +142,27 @@ Only the designated `executive_kpi_emitter_service_name` service should import a
 from __future__ import annotations
 
 import random
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.base_service import BaseService
 
 
-def emit_executive_business_metrics_if_eligible(service) -> None:
-    """Emit synthetic business.* OTLP gauges from the designated KPI emitter service."""
-    if service.SERVICE_NAME != "<executive_kpi_emitter_service_name>":
+def emit_executive_business_metrics_if_eligible(service: "BaseService") -> None:
+    """Emit <scenario> leadership KPI gauges once per telemetry cycle."""
+    ctx = getattr(service, "_ctx", None)
+    if not ctx:
+        return
+    want = getattr(ctx.scenario, "executive_kpi_emitter_service_name", None)
+    if not want or want != service.SERVICE_NAME:
         return
 
-    rng = random.Random()
-    ctx = service._ctx
-    otlp = service._otlp_client
+    emit = service.emit_metric
 
-    # Emit one gauge per KPI defined in scenario.executive_kpi_sections
-    # Use metrics field names that match scenario.executive_kpi_sections specs
-    # e.g. otlp.emit_gauge("business.gmv_usd_per_min", rng.uniform(...), ctx)
-    # Pattern: follow the reference scenario's executive_kpis.py exactly
+    # Emit one metric per KPI defined in scenario.executive_kpi_sections.
+    # service.emit_metric(metric_name, value, unit)
+    # e.g. emit("business.gmv_usd_per_min", round(random.uniform(1_000.0, 9_000.0), 1), "USD/min")
+    # Field names must exactly match what executive_kpi_sections specs reference.
 ```
 
 Read the reference scenario's `executive_kpis.py` for the exact OTLP emit pattern and fill in all KPI fields from `executive_kpi_sections`.
@@ -208,20 +171,12 @@ Read the reference scenario's `executive_kpis.py` for the exact OTLP emit patter
 
 ## Phase 5: Flesh out all properties
 
-Work through [CONTRACT.md](.claude/skills/add-scenario/CONTRACT.md) top-to-bottom. For each property, generate realistic, domain-appropriate content that will resonate with the customer vertical. Keep these rules:
+Work through [CONTRACT.md](CONTRACT.md) top-to-bottom. Pay extra attention to: language allowlist, placeholder/fault-param parity, and k8s-service-to-cloud grouping.
 
-- **Services**: each service dict has exactly these keys: `cloud_provider`, `cloud_region`, `cloud_platform`, `cloud_availability_zone`, `subsystem`, `language`. Language ∈ {python, java, go, dotnet, rust, cpp}.
-- **Channel_registry**: every channel must have `name`, `subsystem`, `error_type`, `affected_services`, `cascade_services`, `description`, `investigation_notes`, `remediation_action`, `error_message`, `stack_trace`. `vehicle_section` and `sensor_type` are domain flavor — include them. Every `{placeholder}` in `error_message` and `stack_trace` must be supplied by `get_fault_params(channel)`.
-- **`get_fault_params`**: returns a dict keyed by channel number. Every placeholder used across error_message and stack_trace for that channel must appear as a key. Use `rng = random.Random(channel + int(time.time()) // 10)` for time-varying but reproducible values.
-- **`get_trace_attributes`**: return a `base` dict with 2–3 domain-wide attributes, then a per-service dict with 4–5 domain-specific OTel-style attributes. Merge and return.
-- **`get_rca_clues`**: for each of the 20 channels, provide a per-service inner dict of 2–3 attributes that give partial clues without exposing the full root cause. Different services should get different clues — no single service has the complete picture.
-- **`knowledge_base_docs`**: return `[]`. The deployer generates KB docs from `channel_registry`.
-- **`agent_config.system_prompt`**: include the agent's persona, domain expertise, all 20 `error_type` values grouped by subsystem, and the reminder "Log messages are in body.text — NEVER search the body field alone."
-- **`hosts`**: 3 hosts, one per cloud. Use realistic OTel host attributes matching the cloud provider (see CONTRACT.md for the exact key list). Use the namespace to name the host (e.g. `<ns>-aws-host-01`).
-- **`k8s_clusters`**: 3 clusters (EKS, GKE, AKS). Each cluster's `services` list must contain exactly the 3 service names for that cloud.
-- **`service_topology`**: every service should appear as a caller at least once. The topology should reflect the primary business workflow. The executive KPI emitter service should be reachable via the topology.
-- **`raw_log_profile`**: set `service_name` to the edge-facing service for the vertical, and `paths` to realistic URL paths for that domain. Set `change_point_path` to the highest-revenue path (checkout, payment, etc.).
-- **`theme`**: choose an accent color that evokes the vertical (e.g. logistics → orange `#f97316`; healthcare → teal `#0d9488`; telco → purple `#7c3aed`). Set `chaos_title`, `service_label` (`"Service"`, `"Node"`, `"System"`, `"Module"`, etc.), and `channel_label` (`"Channel"`, `"Incident"`, `"Alert"`, etc.) to vocabulary the vertical naturally uses.
+Two properties not in CONTRACT.md:
+
+- **`raw_log_profile`**: set `service_name` to the edge-facing service, `paths` to realistic vertical URL paths, and `change_point_path` to the highest-revenue path (checkout, payment, etc.).
+- **`theme.accent_primary`**: choose a color that evokes the vertical (logistics → `#f97316`; healthcare → `#0d9488`; telco → `#7c3aed`; financial → `#10b981`). Match `text_accent` to `accent_primary`.
 
 ---
 
