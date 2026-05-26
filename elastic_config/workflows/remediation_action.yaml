@@ -35,18 +35,22 @@ inputs:
     type: string
     default: ""
     description: "Direct case ID to close (skips tag search when provided — always pass this when remediating from a case context)"
+  - name: approval_mode
+    type: string
+    default: "required"
+    description: "required = pause at waitForInput for operator approval; skip = queue immediately (auto-remediate alerts only)"
   - name: requires_approval
     type: boolean
     default: true
-    description: "Pause for operator approval before queueing remediation. Auto-remediate flows pass false."
+    description: "Deprecated — use approval_mode. If true and approval_mode omitted, approval is required."
 
 steps:
-  # Approval gate — only runs when requires_approval=true. Pauses the workflow
-  # at status WAITING_FOR_INPUT; Agent Builder surfaces the schema-driven
-  # prompt inside the conversation. On denial, comments the case and audits.
+  # Approval gate — runs unless approval_mode is explicitly skip. Uses string
+  # KQL (inputs.approval_mode : skip) because boolean requires_approval does
+  # not match reliably in workflow if conditions.
   - name: approval_flow
     type: if
-    condition: "inputs.requires_approval : true"
+    condition: "NOT inputs.approval_mode : skip"
     steps:
       - name: await_operator_approval
         type: waitForInput
@@ -113,12 +117,10 @@ steps:
                 mission_id: "__SCENARIO_NAME__"
               refresh: wait_for
 
-  # Execute only when auto-remediate explicitly opted out of approval, or when
-  # the operator approved. If requires_approval is true but approval was skipped
-  # or denied, neither branch matches and remediation must not run.
+  # Auto path: approval_mode skip. HITL path: operator approved true.
   - name: execute_remediation
     type: if
-    condition: "inputs.requires_approval : false OR steps.await_operator_approval.output.approved : true"
+    condition: "inputs.approval_mode : skip OR steps.await_operator_approval.output.approved : true"
     steps:
       - name: queue_remediation
         type: elasticsearch.index
@@ -182,20 +184,24 @@ steps:
 
       # Path B: no case_id — fall back to tag-based search
       - name: find_open_case
-        type: kibana.request
-        with:
-          method: GET
-          path: "/api/cases/_find?tags=__NS__&tags={{ inputs.error_type }}&status=open&sortField=createdAt&sortOrder=desc&perPage=1&owner=observability"
+        type: if
+        condition: "NOT inputs.case_id : *"
+        steps:
+          - name: search_open_case
+            type: kibana.request
+            with:
+              method: GET
+              path: "/api/cases/_find?tags=__NS__&tags={{ inputs.error_type }}&status=open&sortField=createdAt&sortOrder=desc&perPage=1&owner=observability"
 
       - name: close_case
         type: if
-        condition: "NOT inputs.case_id : * AND steps.find_open_case.output.cases.0.id : *"
+        condition: "NOT inputs.case_id : * AND steps.search_open_case.output.cases.0.id : *"
         steps:
           - name: add_remediation_comment
             type: kibana.request
             with:
               method: POST
-              path: "/api/cases/{{ steps.find_open_case.output.cases[0].id }}/comments"
+              path: "/api/cases/{{ steps.search_open_case.output.cases[0].id }}/comments"
               headers:
                 kbn-xsrf: "true"
               body:
@@ -215,7 +221,7 @@ steps:
             type: kibana.request
             with:
               method: GET
-              path: "/api/cases/{{ steps.find_open_case.output.cases[0].id }}"
+              path: "/api/cases/{{ steps.search_open_case.output.cases[0].id }}"
 
           - name: update_case_closed
             type: kibana.updateCase
@@ -241,7 +247,7 @@ steps:
             justification: "{{ inputs.justification }}"
             dry_run: "{{ inputs.dry_run }}"
             status: "resolved"
-            approval_requested: "{{ inputs.requires_approval }}"
+            approval_mode: "{{ inputs.approval_mode }}"
             case_closed: true
             mission_id: "__SCENARIO_NAME__"
           refresh: wait_for
