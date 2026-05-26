@@ -967,7 +967,7 @@ tags[2] = remediation_action (all channels, e.g. "reset_safety_system")
 tags[3] = channel number     (all channels, e.g. "20")
 ```
 
-HITL channels (1–15) carry the same tags as auto-remediate channels (16–20); the HITL workflow asks the agent to attempt the remediation, and `remediation_action.yaml`'s `waitForInput` step (gated by `requires_approval`) pauses for operator approval inside the Agent Builder conversation.
+HITL channels (1–15) carry the same tags as auto-remediate channels (16–20); the HITL workflow asks the agent to call `remediation_action` with `approval_mode: required`, and `waitForInput` pauses for operator approval inside the Agent Builder conversation.
 
 **Alert rule naming:**
 
@@ -993,11 +993,11 @@ When falling back to `_wf_search`, distinguish by presence/absence of "Auto-Reme
 
 **HITL steps** (after `attach_alert_to_case`):
 
-1. `request_remediation` — `kibana.request` to `/api/agent_builder/converse` with `conversation_id`; asks the agent to call the `{ns}_remediation_action` workflow tool with `requires_approval: true`. The workflow's `waitForInput` step pauses execution at status `WAITING_FOR_INPUT`; Agent Builder surfaces the approval prompt inside the conversation. On approve, the workflow queues remediation and closes the case; on deny, it posts a denial comment and exits with the case open. Timeout is 30m to allow operator review.
+1. `request_remediation` — `kibana.request` to `/api/agent_builder/converse` with `conversation_id`; asks the agent to call the `{ns}_remediation_action` workflow tool with `approval_mode: required`. The workflow's `waitForInput` step pauses at `WAITING_FOR_INPUT`; Agent Builder surfaces the approval prompt. On approve, remediation is queued and the case closes; on deny, a denial comment is posted and the case stays open. Timeout is 30m.
 
 **Auto-remediate steps** (after `attach_alert_to_case`):
 
-1. `request_remediation` — `kibana.request` to `/api/agent_builder/converse` with `conversation_id`; asks the agent to call the `{ns}_remediation_action` workflow tool passing `action_type`, `channel`, `error_type`, `case_id`, `dry_run: false`, `requires_approval: false`. The explicit `requires_approval: false` skips the `waitForInput` step inside `remediation_action.yaml`. The tool handles the queue write (for `RemediationPoller`), case comment, and case close.
+1. `request_remediation` — `kibana.request` to `/api/agent_builder/converse` with `conversation_id`; asks the agent to call the `{ns}_remediation_action` workflow tool with `approval_mode: skip`, `dry_run: false`, plus `action_type`, `channel`, `error_type`, and `case_id`. `approval_mode: skip` bypasses `waitForInput`. The tool queues remediation for `RemediationPoller`, comments the case, and closes it.
 
 The `RemediationPoller` (`app/chaos/remediation_poller.py`) picks up pending queue entries and calls `chaos_controller.resolve(channel, force=True)` — no changes needed there.
 
@@ -1087,7 +1087,7 @@ POST /api/actions/connector
       timeout: 10m
     ```
 
-40. **LLM self-remediates when given a case ID after RCA** — After completing a root cause analysis, the agent is primed to fix the problem it just diagnosed. The HITL workflow's `request_remediation` step tells the agent to call `remediation_action` with `requires_approval: true`; the workflow's `waitForInput` step pauses for operator approval. Auto-remediate channels pass `requires_approval: false` to skip the pause. **CRITICAL:** `execute_remediation` in `remediation_action.yaml` must use `inputs.requires_approval : false OR steps.await_operator_approval.output.approved : true` — do NOT use `NOT steps.await_operator_approval.output.approved : false`, which treats a skipped approval step as approved and auto-remediates on HITL paths when the agent omits or mis-sets `requires_approval`.
+40. **LLM self-remediates when given a case ID after RCA** — The HITL workflow tells the agent to call `remediation_action` with `approval_mode: required`; auto-remediate passes `approval_mode: skip`. **CRITICAL:** Workflow `if` conditions must use string KQL on `inputs.approval_mode` — boolean `inputs.requires_approval : true/false` does not match reliably from Agent Builder tool invocations, which skips both `waitForInput` and `execute_remediation`. Use `NOT inputs.approval_mode : skip` for the approval gate and `inputs.approval_mode : skip OR steps.await_operator_approval.output.approved : true` for execute.
 
 41. **`attach_alert_to_case` must run immediately after `create_case`** — HTTP 400 "Alert cannot be attached to a closed case" occurs if this step runs after the case has already been closed by another step (e.g. `close_case` in the auto-remediate workflow, or via the `remediation_action` workflow tool). Place `attach_alert_to_case` as the very first step after `create_case`, before any AI agent calls, remediation steps, or case-management steps.
 
@@ -1097,7 +1097,7 @@ POST /api/actions/connector
 
 44. **All scenario-specific data belongs in the scenario's own folder** — Every property that varies by scenario (display text, KPI fields, service names, thresholds, etc.) must be defined as a property on the scenario class in `scenarios/<id>/scenario.py`, not as a lookup dict or `if/elif` block in shared code outside `scenarios/`. The base class in `scenarios/base.py` provides the default/fallback; each scenario overrides it. The dashboard generator, deployer, and agent code must call `scenario.<property>` — never key off `scenario.scenario_id` to branch on scenario-specific values. This keeps all scenario content co-located and ensures adding a new scenario requires changes only in `scenarios/<new_id>/`.
 
-45. **Three deployer mixins added at steps 5, 15, and 17** — `deployer_integrations.py` (step 5) installs OTel integrations from the Elastic package registry before rolling out telemetry. `deployer_backfill.py` (step 15) backfills ECS-formatted logs into `logs.ecs.{ns}` to pre-populate the ECS log stream for the scenario. `deployer_aiops.py` (step 17) creates ML jobs for log rate analysis and message categorization on `logs.otel.{ns}`. These three mixins were added after the original step table was written — any references to "step N" in older notes for steps 6+ are off by one or more from the current indices.
+45. **Three deployer mixins at steps 14, 16, and 18** — `deployer_backfill.py` (step 14) backfills ECS-formatted logs into `logs.ecs.{ns}`. `deployer_aiops.py` (step 16) creates ML jobs for log rate analysis and message categorization on `logs.otel.{ns}`. `deployer_integrations.py` (step 18, last) installs OTel content packages from the Fleet registry after the rest of the stack is up (Fleet can take minutes on Serverless).
 
 ---
 
@@ -1128,22 +1128,24 @@ The deployer is composed of mixins (`SloMixin`, `AlertingMixin`, `DashboardMixin
 | 2 | Derive OTLP endpoint | `deployer_otlp.py` |
 | 3 | Clean up old artifacts | `deployer.py` |
 | 4 | Configure platform settings | `deployer_platform.py` |
-| 5 | Install OTel integrations | `deployer_integrations.py` |
-| 6 | Generate APM rollup data | `deployer_apm.py` |
-| 7 | Deploy workflows | `deployer_workflows.py` |
-| 8 | Index knowledge base | `deployer_kb.py` |
-| 9 | Deploy AI agent tools + skills | `deployer_agent.py` + `deployer_skills.py` |
-| 10 | Create AI agent | `deployer_agent.py` |
-| 11 | Create significant events | `deployer_streams.py` |
-| 12 | Create data views | `deployer_views.py` |
-| 13 | Import executive dashboard | `deployer_dashboard.py` |
-| 14 | Create alert rules | `deployer_alerting.py` |
-| 15 | ECS log backfill | `deployer_backfill.py` |
-| 16 | Enable APM anomaly detection | `deployer_apm.py` |
-| 17 | Create logs ML jobs (rate + categorization) | `deployer_aiops.py` |
-| 18 | Create SLOs | `deployer_slos.py` |
+| 5 | Generate APM rollup data | `deployer_apm.py` |
+| 6 | Deploy workflows | `deployer_workflows.py` |
+| 7 | Index knowledge base | `deployer_kb.py` |
+| 8 | Deploy AI agent tools + skills | `deployer_agent.py` + `deployer_skills.py` |
+| 9 | Create AI agent | `deployer_agent.py` |
+| 10 | Create significant events | `deployer_streams.py` |
+| 11 | Create data views | `deployer_views.py` |
+| 12 | Import executive dashboard | `deployer_dashboard.py` |
+| 13 | Create alert rules | `deployer_alerting.py` |
+| 14 | ECS log backfill | `deployer_backfill.py` |
+| 15 | Enable APM anomaly detection | `deployer_apm.py` |
+| 16 | Create logs ML jobs (rate + categorization) | `deployer_aiops.py` |
+| 17 | Create SLOs | `deployer_slos.py` |
+| 18 | Install OTel integrations | `deployer_integrations.py` |
 
-**Skills deploy as part of step 9** — `_deploy_tools()` calls `_deploy_skills()` after deploying all tools; `step.items_total` is set to `len(tools) + len(skill_defs)`. No step index bump required.
+**OTel integrations run last (step 18)** — Fleet readiness can take several minutes on Serverless; running after SLOs lets the rest of the stack deploy without blocking on Fleet/EPM. The step can still fail or skip without aborting prior work.
+
+**Skills deploy as part of step 8** — `_deploy_tools()` calls `_deploy_skills()` after deploying all tools; `step.items_total` is set to `len(tools) + len(skill_defs)`. No step index bump required.
 
 **Gotcha:** When inserting a step, update `_step(n)` calls in every mixin file that uses a higher index. There are typically 9+ files involved.
 

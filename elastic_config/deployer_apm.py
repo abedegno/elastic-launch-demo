@@ -19,7 +19,7 @@ class ApmMixin:
         """Step 4: Generate synthetic APM rollup data and deploy DB ingest pipeline."""
         from elastic_config.apm_rollup import ApmRollupGenerator
 
-        step = self._step(6)
+        step = self._step(5)
         step.status = "running"
         notify(self.progress)
 
@@ -141,7 +141,7 @@ class ApmMixin:
         - Composite aggregation (date_histogram + transaction.type + service.name)
         - summary_count_field_name: "doc_count" (composite bucket doc_count)
         """
-        step = self._step(16)
+        step = self._step(15)
         step.status = "running"
         notify(self.progress)
 

@@ -11,8 +11,8 @@ from elastic_config.deployer_base import _es_headers, _kibana_headers, _retry_ht
 
 logger = logging.getLogger("deployer")
 
-# Fork can fail on a cold cluster if logs.otel is not ready yet (integrations
-# just installed) or Streams is still enabling. Match OTLP derivation pacing.
+# Fork can fail on a cold cluster if logs.otel is not ready yet or Streams is
+# still enabling. Match OTLP derivation pacing.
 _STREAM_FORK_ROUNDS = 4
 _STREAM_FORK_ROUND_DELAY = 5.0
 
@@ -143,7 +143,7 @@ class StreamsMixin:
         return deleted_ok
 
     def _deploy_significant_events(self, client: httpx.Client, notify: ProgressCallback):
-        step = self._step(11)
+        step = self._step(10)
         step.status = "running"
         notify(self.progress)
 
