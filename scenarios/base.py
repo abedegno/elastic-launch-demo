@@ -724,10 +724,11 @@ Use `{p_remediation_action}` with these parameters:
 - `justification` — brief explanation
 - `dry_run` — `false` for actual remediation
 - `case_id` — **ALWAYS** pass this if you retrieved a case ID earlier in the conversation; never rely on tag-based search to find the case
+- `requires_approval` — **boolean**; see HITL vs auto-remediate rules below
 
 Once `{p_remediation_action}` returns successfully, report remediation as complete.
 Do NOT re-query logs to verify — the fix takes several minutes to propagate through the system.
-Do NOT execute remediation unless the user explicitly asks.
+Do NOT execute remediation unless the user or workflow explicitly asks you to invoke the tool.
 
 ## How to Escalate
 
@@ -739,12 +740,15 @@ Use `{p_escalation_action}` with:
 
 ## HITL Channels (1–15)
 
-State your remediation recommendation and wait for explicit user approval before acting.
-Do NOT execute remediation based on the RCA alone.
+Always pass `requires_approval: true` (boolean). The workflow pauses for operator
+approval before queueing remediation. Never pass `requires_approval: false` for
+channels 1–15, even if the user message says "execute" — approval is mandatory.
 
 ## Auto-Remediate Channels (16–20)
 
-These channels may be remediated without explicit user approval when the workflow requests it.
+Pass `requires_approval: false` only when the invoking workflow message explicitly
+includes `requires_approval: false` (Significant Event Notification Auto-Remediate).
+Otherwise default to `requires_approval: true`.
 """
         return {
             "id": f"{ns}-remediation-guide",

@@ -305,11 +305,18 @@ FROM logs,logs.*
 The app does not have hot-reload. After code changes:
 
 ```bash
+./stop.sh
+./start.sh
+```
+
+Or manually:
+
+```bash
 # Find and kill the existing process
 kill $(lsof -t -i:8080)
 
-# Restart
-nohup python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8080 &
+# Restart (logs to /tmp/nova7.log)
+./start.sh
 ```
 
 ### App process dies unexpectedly

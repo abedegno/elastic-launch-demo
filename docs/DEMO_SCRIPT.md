@@ -19,7 +19,7 @@
 
 ## Opening: Choose Your Scenario
 
-> "What I am about to show you is an observability demo platform. We have six industry verticals to choose from — space launch, sports streaming, financial services, healthcare, gaming, and insurance. Each one simulates nine microservices running across AWS, GCP, and Azure, all generating real OpenTelemetry telemetry that flows into Elastic."
+> "What I am about to show you is an observability demo platform. We have nine industry verticals to choose from — space launch, sports streaming, financial services, healthcare, gaming, retail banking, e-commerce, manufacturing, and GCP network operations. Each one simulates nine microservices running across AWS, GCP, and Azure, all generating real OpenTelemetry telemetry that flows into Elastic."
 
 If selecting a scenario live:
 
@@ -154,7 +154,7 @@ Switch to Kibana to show the error rate dropping.
 > 3. **Investigate** — An AI agent queries Elastic to determine root cause
 > 4. **Remediate** — Automated workflows resolve the fault and notify the team
 >
-> This is the same architecture you would use in production — the same OTLP protocol, the same Elastic detection engine, the same AI-powered investigation. And we can switch to any of our six industry scenarios to tell the story that resonates with your environment."
+> This is the same architecture you would use in production — the same OTLP protocol, the same Elastic detection engine, the same AI-powered investigation. And we can switch to any of our nine industry scenarios to tell the story that resonates with your environment."
 
 ### Optional: Second Fault
 

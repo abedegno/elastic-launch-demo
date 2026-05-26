@@ -10,26 +10,26 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 | Ch | Name | Subsystem | Section | Error Type |
 |----|------|-----------|---------|------------|
-| 1 | Thermal Calibration Drift | propulsion | engine_bay | ThermalCalibrationException |
-| 2 | Fuel Pressure Anomaly | propulsion | fuel_tanks | FuelPressureException |
-| 3 | Oxidizer Flow Rate Deviation | propulsion | engine_bay | OxidizerFlowException |
-| 4 | GPS Multipath Interference | guidance | avionics | GPSMultipathException |
-| 5 | IMU Synchronization Loss | guidance | avionics | IMUSyncException |
-| 6 | Star Tracker Alignment Fault | guidance | avionics | StarTrackerAlignmentException |
-| 7 | S-Band Signal Degradation | communications | antenna_array | SignalDegradationException |
-| 8 | X-Band Packet Loss | communications | antenna_array | PacketLossException |
-| 9 | UHF Antenna Pointing Error | communications | antenna_array | AntennaPointingException |
-| 10 | Payload Thermal Excursion | payload | payload_bay | PayloadThermalException |
-| 11 | Payload Vibration Anomaly | payload | payload_bay | PayloadVibrationException |
-| 12 | Cross-Cloud Relay Latency | relay | ground_network | RelayLatencyException |
-| 13 | Relay Packet Corruption | relay | ground_network | PacketCorruptionException |
-| 14 | Ground Power Bus Fault | ground | launch_pad | PowerBusFaultException |
-| 15 | Weather Station Data Gap | ground | launch_pad | WeatherDataGapException |
-| 16 | Pad Hydraulic Pressure Loss | ground | launch_pad | HydraulicPressureException |
-| 17 | Sensor Validation Pipeline Stall | validation | ground_network | ValidationPipelineException |
-| 18 | Calibration Epoch Mismatch | validation | ground_network | CalibrationEpochException |
-| 19 | Flight Termination System Check Failure | safety | vehicle_wide | FTSCheckException |
-| 20 | Range Safety Tracking Loss | safety | vehicle_wide | TrackingLossException |
+| 1 | Thermal Calibration Drift | propulsion | engine_bay | TCS-DRIFT-CRITICAL |
+| 2 | Fuel Pressure Anomaly | propulsion | fuel_tanks | PMS-PRESS-ANOMALY |
+| 3 | Oxidizer Flow Rate Deviation | propulsion | engine_bay | PMS-OXIDIZER-FLOW |
+| 4 | GPS Multipath Interference | guidance | avionics | GNC-GPS-MULTIPATH |
+| 5 | IMU Synchronization Loss | guidance | avionics | GNC-IMU-SYNC-LOSS |
+| 6 | Star Tracker Alignment Fault | guidance | avionics | GNC-STAR-TRACKER-ALIGN |
+| 7 | Flight Termination System Check Failure | safety | vehicle_wide | RSO-FTS-CHECK-FAIL |
+| 8 | X-Band Packet Loss | communications | antenna_array | COMM-PACKET-LOSS |
+| 9 | UHF Antenna Pointing Error | communications | antenna_array | COMM-ANTENNA-POINTING |
+| 10 | Payload Thermal Excursion | payload | payload_bay | PLD-THERMAL-EXCURSION |
+| 11 | Payload Vibration Anomaly | payload | payload_bay | PLD-VIBRATION-LIMIT |
+| 12 | Pad Hydraulic Pressure Loss | ground | launch_pad | GND-HYDRAULIC-PRESS |
+| 13 | Relay Packet Corruption | relay | ground_network | RLY-PACKET-CORRUPT |
+| 14 | Ground Power Bus Fault | ground | launch_pad | GND-POWER-BUS-FAULT |
+| 15 | Range Safety Tracking Loss | safety | vehicle_wide | RSO-TRACKING-LOSS |
+| 16 | Cross-Cloud Relay Latency | relay | ground_network | RLY-LATENCY-CRITICAL |
+| 17 | Sensor Validation Pipeline Stall | validation | ground_network | VV-PIPELINE-HALT |
+| 18 | Calibration Epoch Mismatch | validation | ground_network | VV-EPOCH-DRIFT |
+| 19 | S-Band Signal Degradation | communications | antenna_array | COMM-SIGNAL-DEGRAD |
+| 20 | Weather Station Data Gap | ground | launch_pad | GND-WEATHER-GAP |
 
 ---
 
@@ -39,7 +39,7 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 - **Subsystem:** propulsion
 - **Vehicle Section:** engine_bay
-- **Error Type:** `ThermalCalibrationException`
+- **Error Type:** `TCS-DRIFT-CRITICAL`
 - **Sensor Type:** thermal
 - **Affected Services:** fuel-system, sensor-validator
 - **Cascade Services:** mission-control, range-safety
@@ -50,7 +50,7 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 - **Subsystem:** propulsion
 - **Vehicle Section:** fuel_tanks
-- **Error Type:** `FuelPressureException`
+- **Error Type:** `PMS-PRESS-ANOMALY`
 - **Sensor Type:** pressure
 - **Affected Services:** fuel-system, sensor-validator
 - **Cascade Services:** mission-control, range-safety
@@ -61,7 +61,7 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 - **Subsystem:** propulsion
 - **Vehicle Section:** engine_bay
-- **Error Type:** `OxidizerFlowException`
+- **Error Type:** `PMS-OXIDIZER-FLOW`
 - **Sensor Type:** flow_rate
 - **Affected Services:** fuel-system, sensor-validator
 - **Cascade Services:** mission-control
@@ -72,7 +72,7 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 - **Subsystem:** guidance
 - **Vehicle Section:** avionics
-- **Error Type:** `GPSMultipathException`
+- **Error Type:** `GNC-GPS-MULTIPATH`
 - **Sensor Type:** gps
 - **Affected Services:** navigation, sensor-validator
 - **Cascade Services:** mission-control, range-safety
@@ -83,7 +83,7 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 - **Subsystem:** guidance
 - **Vehicle Section:** avionics
-- **Error Type:** `IMUSyncException`
+- **Error Type:** `GNC-IMU-SYNC-LOSS`
 - **Sensor Type:** imu
 - **Affected Services:** navigation, sensor-validator
 - **Cascade Services:** mission-control, range-safety
@@ -94,29 +94,29 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 - **Subsystem:** guidance
 - **Vehicle Section:** avionics
-- **Error Type:** `StarTrackerAlignmentException`
+- **Error Type:** `GNC-STAR-TRACKER-ALIGN`
 - **Sensor Type:** star_tracker
 - **Affected Services:** navigation, sensor-validator
 - **Cascade Services:** mission-control
 - **Description:** The star tracker optical alignment exceeds the 5.0 arcsecond tolerance. Boresight error between the catalog star positions and observed positions indicates a mechanical or thermal misalignment.
 - **Cloud Context:** navigation on GCP us-central1-a, sensor-validator on Azure eastus-1
 
-### Channel 7 — S-Band Signal Degradation
+### Channel 7 — Flight Termination System Check Failure
 
-- **Subsystem:** communications
-- **Vehicle Section:** antenna_array
-- **Error Type:** `SignalDegradationException`
-- **Sensor Type:** rf_signal
-- **Affected Services:** comms-array, sensor-validator
-- **Cascade Services:** mission-control, telemetry-relay
-- **Description:** S-band communication signal-to-noise ratio falls below the 12.0dB minimum threshold on one or more RF channels. This degrades the primary command and telemetry link.
-- **Cloud Context:** comms-array on GCP us-central1-b, sensor-validator on Azure eastus-1
+- **Subsystem:** safety
+- **Vehicle Section:** vehicle_wide
+- **Error Type:** `RSO-FTS-CHECK-FAIL`
+- **Sensor Type:** safety_system
+- **Affected Services:** range-safety, sensor-validator
+- **Cascade Services:** mission-control
+- **Description:** The flight termination system self-test returns an anomalous error code instead of the expected 0x00 success code. This is a safety-critical system — any anomaly requires immediate investigation and is a mandatory launch hold per Range Safety requirements.
+- **Cloud Context:** range-safety on Azure eastus-1, sensor-validator on Azure eastus-1
 
 ### Channel 8 — X-Band Packet Loss
 
 - **Subsystem:** communications
 - **Vehicle Section:** antenna_array
-- **Error Type:** `PacketLossException`
+- **Error Type:** `COMM-PACKET-LOSS`
 - **Sensor Type:** packet_integrity
 - **Affected Services:** comms-array, sensor-validator
 - **Cascade Services:** telemetry-relay, mission-control
@@ -127,7 +127,7 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 - **Subsystem:** communications
 - **Vehicle Section:** antenna_array
-- **Error Type:** `AntennaPointingException`
+- **Error Type:** `COMM-ANTENNA-POINTING`
 - **Sensor Type:** antenna_position
 - **Affected Services:** comms-array, sensor-validator
 - **Cascade Services:** mission-control
@@ -138,7 +138,7 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 - **Subsystem:** payload
 - **Vehicle Section:** payload_bay
-- **Error Type:** `PayloadThermalException`
+- **Error Type:** `PLD-THERMAL-EXCURSION`
 - **Sensor Type:** thermal
 - **Affected Services:** payload-monitor, sensor-validator
 - **Cascade Services:** mission-control
@@ -149,29 +149,29 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 - **Subsystem:** payload
 - **Vehicle Section:** payload_bay
-- **Error Type:** `PayloadVibrationException`
+- **Error Type:** `PLD-VIBRATION-LIMIT`
 - **Sensor Type:** vibration
 - **Affected Services:** payload-monitor, sensor-validator
 - **Cascade Services:** mission-control, range-safety
 - **Description:** Vibration levels on one or more axes exceed the 1.5g structural safety limit. High-frequency vibration at specific resonant frequencies could damage the payload.
 - **Cloud Context:** payload-monitor on GCP us-central1-a, sensor-validator on Azure eastus-1
 
-### Channel 12 — Cross-Cloud Relay Latency
+### Channel 12 — Pad Hydraulic Pressure Loss
 
-- **Subsystem:** relay
-- **Vehicle Section:** ground_network
-- **Error Type:** `RelayLatencyException`
-- **Sensor Type:** network_latency
-- **Affected Services:** telemetry-relay, sensor-validator
-- **Cascade Services:** mission-control, comms-array
-- **Description:** Cross-cloud telemetry relay latency between cloud providers exceeds the 200ms threshold. This indicates network congestion or routing issues between AWS, GCP, and Azure regions.
-- **Cloud Context:** telemetry-relay on Azure eastus-2, sensor-validator on Azure eastus-1
+- **Subsystem:** ground
+- **Vehicle Section:** launch_pad
+- **Error Type:** `GND-HYDRAULIC-PRESS`
+- **Sensor Type:** hydraulic
+- **Affected Services:** ground-systems, sensor-validator
+- **Cascade Services:** mission-control
+- **Description:** Launch pad hydraulic system pressure drops below the 2800 PSI minimum required for pad operations including launch clamp release and service arm retraction.
+- **Cloud Context:** ground-systems on AWS us-east-1c, sensor-validator on Azure eastus-1
 
 ### Channel 13 — Relay Packet Corruption
 
 - **Subsystem:** relay
 - **Vehicle Section:** ground_network
-- **Error Type:** `PacketCorruptionException`
+- **Error Type:** `RLY-PACKET-CORRUPT`
 - **Sensor Type:** data_integrity
 - **Affected Services:** telemetry-relay, sensor-validator
 - **Cascade Services:** mission-control
@@ -182,40 +182,40 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 - **Subsystem:** ground
 - **Vehicle Section:** launch_pad
-- **Error Type:** `PowerBusFaultException`
+- **Error Type:** `GND-POWER-BUS-FAULT`
 - **Sensor Type:** electrical
 - **Affected Services:** ground-systems, sensor-validator
 - **Cascade Services:** mission-control, fuel-system
 - **Description:** Launch pad power bus voltage deviates significantly from the 120V nominal. This can affect ground support equipment, fueling systems, and pad safety systems.
 - **Cloud Context:** ground-systems on AWS us-east-1c, sensor-validator on Azure eastus-1
 
-### Channel 15 — Weather Station Data Gap
+### Channel 15 — Range Safety Tracking Loss
 
-- **Subsystem:** ground
-- **Vehicle Section:** launch_pad
-- **Error Type:** `WeatherDataGapException`
-- **Sensor Type:** weather
-- **Affected Services:** ground-systems, sensor-validator
-- **Cascade Services:** mission-control, range-safety
-- **Description:** One or more weather monitoring stations stop reporting data. Gaps exceeding 15 seconds violate launch commit criteria for weather monitoring coverage.
-- **Cloud Context:** ground-systems on AWS us-east-1c, sensor-validator on Azure eastus-1
+- **Subsystem:** safety
+- **Vehicle Section:** vehicle_wide
+- **Error Type:** `RSO-TRACKING-LOSS`
+- **Sensor Type:** radar_tracking
+- **Affected Services:** range-safety, sensor-validator
+- **Cascade Services:** mission-control, navigation
+- **Description:** Range safety radar loses vehicle track for longer than the 250ms maximum allowed gap. Continuous tracking is required for flight safety — loss of track may require activation of the flight termination system.
+- **Cloud Context:** range-safety on Azure eastus-1, sensor-validator on Azure eastus-1
 
-### Channel 16 — Pad Hydraulic Pressure Loss
+### Channel 16 — Cross-Cloud Relay Latency
 
-- **Subsystem:** ground
-- **Vehicle Section:** launch_pad
-- **Error Type:** `HydraulicPressureException`
-- **Sensor Type:** hydraulic
-- **Affected Services:** ground-systems, sensor-validator
-- **Cascade Services:** mission-control
-- **Description:** Launch pad hydraulic system pressure drops below the 2800 PSI minimum required for pad operations including launch clamp release and service arm retraction.
-- **Cloud Context:** ground-systems on AWS us-east-1c, sensor-validator on Azure eastus-1
+- **Subsystem:** relay
+- **Vehicle Section:** ground_network
+- **Error Type:** `RLY-LATENCY-CRITICAL`
+- **Sensor Type:** network_latency
+- **Affected Services:** telemetry-relay, sensor-validator
+- **Cascade Services:** mission-control, comms-array
+- **Description:** Cross-cloud telemetry relay latency between cloud providers exceeds the 200ms threshold. This indicates network congestion or routing issues between AWS, GCP, and Azure regions.
+- **Cloud Context:** telemetry-relay on Azure eastus-2, sensor-validator on Azure eastus-1
 
 ### Channel 17 — Sensor Validation Pipeline Stall
 
 - **Subsystem:** validation
 - **Vehicle Section:** ground_network
-- **Error Type:** `ValidationPipelineException`
+- **Error Type:** `VV-PIPELINE-HALT`
 - **Sensor Type:** pipeline_health
 - **Affected Services:** sensor-validator
 - **Cascade Services:** mission-control, telemetry-relay
@@ -226,34 +226,34 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 - **Subsystem:** validation
 - **Vehicle Section:** ground_network
-- **Error Type:** `CalibrationEpochException`
+- **Error Type:** `VV-EPOCH-DRIFT`
 - **Sensor Type:** calibration
 - **Affected Services:** sensor-validator
 - **Cascade Services:** mission-control, fuel-system, navigation
 - **Description:** A sensor's calibration epoch does not match the expected reference epoch. This means the sensor is using stale or incorrect calibration data, potentially producing inaccurate readings across multiple subsystems.
 - **Cloud Context:** sensor-validator on Azure eastus-1
 
-### Channel 19 — Flight Termination System Check Failure
+### Channel 19 — S-Band Signal Degradation
 
-- **Subsystem:** safety
-- **Vehicle Section:** vehicle_wide
-- **Error Type:** `FTSCheckException`
-- **Sensor Type:** safety_system
-- **Affected Services:** range-safety, sensor-validator
-- **Cascade Services:** mission-control
-- **Description:** The flight termination system self-test returns an anomalous error code instead of the expected 0x00 success code. This is a safety-critical system — any anomaly requires immediate investigation.
-- **Cloud Context:** range-safety on Azure eastus-1, sensor-validator on Azure eastus-1
+- **Subsystem:** communications
+- **Vehicle Section:** antenna_array
+- **Error Type:** `COMM-SIGNAL-DEGRAD`
+- **Sensor Type:** rf_signal
+- **Affected Services:** comms-array, sensor-validator
+- **Cascade Services:** mission-control, telemetry-relay
+- **Description:** S-band communication signal-to-noise ratio falls below the 12.0dB minimum threshold on one or more RF channels. This degrades the primary command and telemetry link.
+- **Cloud Context:** comms-array on GCP us-central1-b, sensor-validator on Azure eastus-1
 
-### Channel 20 — Range Safety Tracking Loss
+### Channel 20 — Weather Station Data Gap
 
-- **Subsystem:** safety
-- **Vehicle Section:** vehicle_wide
-- **Error Type:** `TrackingLossException`
-- **Sensor Type:** radar_tracking
-- **Affected Services:** range-safety, sensor-validator
-- **Cascade Services:** mission-control, navigation
-- **Description:** Range safety radar loses vehicle track for longer than the 250ms maximum allowed gap. Continuous tracking is required for flight safety — loss of track may require activation of the flight termination system.
-- **Cloud Context:** range-safety on Azure eastus-1, sensor-validator on Azure eastus-1
+- **Subsystem:** ground
+- **Vehicle Section:** launch_pad
+- **Error Type:** `GND-WEATHER-GAP`
+- **Sensor Type:** weather
+- **Affected Services:** ground-systems, sensor-validator
+- **Cascade Services:** mission-control, range-safety
+- **Description:** One or more weather monitoring stations stop reporting data. Gaps exceeding 15 seconds violate launch commit criteria for weather monitoring coverage.
+- **Cloud Context:** ground-systems on AWS us-east-1c, sensor-validator on Azure eastus-1
 
 ---
 
@@ -263,28 +263,28 @@ Complete reference for the fault channel system. Each scenario defines 20 indepe
 
 | Service | Primary Channels | Cascade Channels |
 |---------|-----------------|------------------|
-| fuel-system | 1, 2, 3 | 14 |
-| navigation | 4, 5, 6 | 18, 20 |
-| comms-array | 7, 8, 9 | 12 |
+| fuel-system | 1, 2, 3 | 14, 18 |
+| navigation | 4, 5, 6 | 15, 18 |
+| comms-array | 8, 9, 19 | 16 |
 | payload-monitor | 10, 11 | — |
-| telemetry-relay | 12, 13 | 7, 8, 17 |
-| ground-systems | 14, 15, 16 | — |
-| sensor-validator | 1-20 (all) | — |
-| range-safety | 19, 20 | 1, 2, 4, 5, 11, 15 |
-| mission-control | — | 1-20 (all) |
+| telemetry-relay | 13, 16 | 8, 17, 19 |
+| ground-systems | 12, 14, 20 | — |
+| sensor-validator | 1–20 (all) | — |
+| range-safety | 7, 15 | 1, 2, 4, 5, 11, 20 |
+| mission-control | — | 1–20 (all) |
 
 ### Subsystem Grouping
 
-| Subsystem | Channels | Cloud Provider |
+| Subsystem | Channels | Primary Cloud |
 |-----------|----------|----------------|
 | propulsion | 1, 2, 3 | AWS |
 | guidance | 4, 5, 6 | GCP |
-| communications | 7, 8, 9 | GCP |
+| safety | 7, 15 | Azure |
+| communications | 8, 9, 19 | GCP |
 | payload | 10, 11 | GCP |
-| relay | 12, 13 | Azure |
-| ground | 14, 15, 16 | AWS |
+| ground | 12, 14, 20 | AWS |
+| relay | 13, 16 | Azure |
 | validation | 17, 18 | Azure |
-| safety | 19, 20 | Azure |
 
 ---
 

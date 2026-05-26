@@ -92,16 +92,22 @@ pip install -r requirements.txt
 
 ## 4. Start the Application
 
-The app runs as a single Python process:
+The recommended way to start the app:
+
+```bash
+./start.sh
+```
+
+This runs uvicorn in the background and logs to `/tmp/nova7.log`. To stop it:
+
+```bash
+./stop.sh
+```
+
+To start manually in the foreground (useful for debugging):
 
 ```bash
 python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8080
-```
-
-To run in the background:
-
-```bash
-nohup python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8080 &
 ```
 
 Verify it is running:
@@ -125,7 +131,7 @@ Expected response:
 
 1. Open `http://<your-host>/` in a browser
 2. The **Scenario Selector** page shows all available industry verticals
-3. Choose a scenario (e.g., "NOVA-7 Launch Control" for space)
+3. Choose a scenario (e.g., "NOVA-7 Space Mission" for space)
 4. Enter your Elastic Cloud credentials (auto-detected if previously configured)
 5. Click **Launch**
 
