@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import httpx
 
 from elastic_config.deployer_base import _es_headers, _kibana_headers, _retry_http, ProgressCallback
 
 logger = logging.getLogger("deployer")
+
+# Fork can fail on a cold cluster if logs.otel is not ready yet (integrations
+# just installed) or Streams is still enabling. Match OTLP derivation pacing.
+_STREAM_FORK_ROUNDS = 4
+_STREAM_FORK_ROUND_DELAY = 5.0
 
 
 class StreamsMixin:
@@ -27,55 +33,78 @@ class StreamsMixin:
         the deployer then forks `logs.ecs` into per-scenario partitions."""
         return "logs.ecs"
 
-    def _create_stream(self, client: httpx.Client) -> None:
-        """Fork logs.otel into a scenario-specific child stream."""
-        resp = client.post(
-            f"{self.kibana_url}/api/streams/logs.otel/_fork",
+    def _stream_exists(self, client: httpx.Client, stream_name: str | None = None) -> bool:
+        """Return True if the given stream (default: scenario OTLP child) is present."""
+        name = stream_name or self._stream_name
+        resp = client.get(
+            f"{self.kibana_url}/api/streams/{name}",
             headers=_kibana_headers(self.api_key),
-            json={
-                "where": {
-                    "field": "resource.attributes.service.namespace",
-                    "eq": self.ns,
-                },
-                "status": "enabled",
-                "stream": {
-                    "name": self._stream_name,
-                },
-            },
         )
-        if resp.status_code >= 300:
-            logger.warning("Stream fork failed (HTTP %s): %s", resp.status_code, resp.text[:500])
+        return resp.status_code == 200
 
-    def _create_ecs_stream(self, client: httpx.Client) -> None:
-        """Fork the `logs.ecs` wired stream into this scenario's partition
-        `logs.ecs.{ns}`, filtered by service.namespace.
+    def _fork_stream(
+        self,
+        client: httpx.Client,
+        *,
+        parent: str,
+        child: str,
+        filter_field: str,
+    ) -> bool:
+        """Fork a parent stream into a child partition. Retries with backoff."""
+        if self._stream_exists(client, child):
+            return True
 
-        Mirrors how `logs.otel` / `logs.otel.{ns}` are handled. In 9.4+ wired
-        streams are enabled by default, so no data-stream PUT is needed — the
-        wired-stream endpoint accepts `_bulk` writes directly.
-        """
-        try:
-            resp = client.post(
-                f"{self.kibana_url}/api/streams/{self._ecs_wired_stream}/_fork",
-                headers=_kibana_headers(self.api_key),
-                json={
-                    "where": {
-                        "field": "service.namespace",
-                        "eq": self.ns,
-                    },
-                    "status": "enabled",
-                    "stream": {
-                        "name": self._ecs_stream_name,
-                    },
-                },
+        fork_body = {
+            "where": {"field": filter_field, "eq": self.ns},
+            "status": "enabled",
+            "stream": {"name": child},
+        }
+        fork_url = f"{self.kibana_url}/api/streams/{parent}/_fork"
+        label = f"fork {child} from {parent}"
+
+        for round_idx in range(_STREAM_FORK_ROUNDS):
+            if round_idx > 0:
+                time.sleep(_STREAM_FORK_ROUND_DELAY)
+
+            resp = _retry_http(
+                lambda: client.post(
+                    fork_url,
+                    headers=_kibana_headers(self.api_key),
+                    json=fork_body,
+                ),
+                label=label,
             )
-            if resp.status_code >= 300:
+            if resp is not None and resp.status_code < 300 and self._stream_exists(client, child):
+                return True
+            if resp is not None and resp.status_code >= 300:
                 logger.warning(
-                    "ECS stream fork failed (HTTP %s): %s",
-                    resp.status_code, resp.text[:500],
+                    "%s failed (HTTP %s, round %d/%d): %s",
+                    label,
+                    resp.status_code,
+                    round_idx + 1,
+                    _STREAM_FORK_ROUNDS,
+                    resp.text[:500],
                 )
-        except Exception as exc:
-            logger.warning("ECS stream fork exception (non-fatal): %s", exc)
+
+        return self._stream_exists(client, child)
+
+    def _create_stream(self, client: httpx.Client) -> bool:
+        """Fork logs.otel into a scenario-specific child stream."""
+        return self._fork_stream(
+            client,
+            parent="logs.otel",
+            child=self._stream_name,
+            filter_field="resource.attributes.service.namespace",
+        )
+
+    def _create_ecs_stream(self, client: httpx.Client) -> bool:
+        """Fork logs.ecs into this scenario's partition."""
+        return self._fork_stream(
+            client,
+            parent=self._ecs_wired_stream,
+            child=self._ecs_stream_name,
+            filter_field="service.namespace",
+        )
 
     def _delete_ecs_stream(self, client: httpx.Client) -> bool:
         """Delete only this scenario's partition. The base wired stream
@@ -120,7 +149,15 @@ class StreamsMixin:
 
         # Delete any existing stream then recreate it clean
         self._delete_stream(client)
-        self._create_stream(client)
+        if not self._create_stream(client):
+            step.detail = (
+                f"Failed to fork {self._stream_name} from logs.otel after "
+                f"{_STREAM_FORK_ROUNDS} attempts (namespace={self.ns}). "
+                "Check Streams is enabled and OTLP data is flowing into logs.otel."
+            )
+            step.status = "failed"
+            notify(self.progress)
+            return
 
         # Build bulk operations
         operations = []

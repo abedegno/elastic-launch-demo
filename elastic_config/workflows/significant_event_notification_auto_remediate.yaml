@@ -129,7 +129,8 @@ steps:
         agent_id: __AGENT_ID__
         conversation_id: "{{ steps.run_rca.output.conversation_id }}"
         input: >
-          Execute remediation now using the remediation_action workflow with these parameters:
+          Invoke the remediation_action workflow tool now with requires_approval set
+          to boolean false (this is the only path that may skip operator approval):
           - action_type: {{ event.rule.tags[2] }}
           - channel: {{ event.rule.tags[3] }}
           - error_type: {{ event.rule.tags[1] }}

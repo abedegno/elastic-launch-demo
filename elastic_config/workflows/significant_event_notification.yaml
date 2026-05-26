@@ -124,9 +124,10 @@ steps:
         agent_id: __AGENT_ID__
         conversation_id: "{{ steps.run_rca.output.conversation_id }}"
         input: >
-          Case {{ steps.create_case.output.id }} has been opened. Propose and
-          execute the appropriate remediation using the remediation_action
-          workflow tool with these parameters:
+          Case {{ steps.create_case.output.id }} has been opened. Invoke the
+          remediation_action workflow tool (do not queue remediation yourself).
+          You MUST pass requires_approval as boolean true — never false on this
+          HITL path. Parameters:
           - action_type: {{ event.rule.tags[2] }}
           - channel: {{ event.rule.tags[3] }}
           - error_type: {{ event.rule.tags[1] }}
@@ -135,10 +136,10 @@ steps:
           - requires_approval: true
           - justification: Operator approval requested via Agent Builder
 
-          The tool will pause for operator approval before queueing the
-          remediation. If the operator denies, add a brief comment to the case
-          noting the denial — do not retry. If the operator approves, the tool
-          will queue the remediation and close the case automatically.
+          The workflow pauses at waitForInput until the operator approves.
+          Do not call resume_workflow_execution or pass requires_approval: false.
+          If the operator denies, add a brief case comment — do not retry.
+          If approved, the workflow queues remediation and closes the case.
     timeout: 30m
 
   - name: audit_log

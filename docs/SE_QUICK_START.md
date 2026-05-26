@@ -15,7 +15,7 @@ If the platform is not yet running, see [SETUP_GUIDE.md](SETUP_GUIDE.md) for ful
 
 ## 2. Open the Scenario Selector
 
-Navigate to `http://<host>/` in your browser. You will see the **Scenario Selector** with 6 industry verticals.
+Navigate to `http://<host>/` in your browser. You will see the **Scenario Selector** with 9 industry verticals.
 
 ## 3. Choose a Scenario
 
@@ -23,11 +23,14 @@ Pick the scenario that best fits your audience:
 
 | Audience | Recommended Scenario | Why |
 |----------|---------------------|-----|
-| General / Technical | **Space** (NOVA-7 Launch Control) | Dramatic, easy to understand, great visuals |
-| Sports / Media | **Fanatics** (Fanatics Live) | Live streaming, real-time engagement |
+| General / Technical | **Space** (NOVA-7 Space Mission) | Dramatic, easy to understand, great visuals |
+| Sports / Media | **Fanatics** (Fanatics Collectibles) | Live streaming, real-time engagement |
 | Banking / Finance | **Financial** or **Banking** | Trading systems, compliance, fraud detection |
 | Healthcare / Life Sciences | **Healthcare** | Patient systems, regulatory, clinical data |
 | Gaming / Entertainment | **Gaming** | Real-time multiplayer, matchmaking, payments |
+| E-Commerce / Retail | **E-Commerce** | Order management, checkout, fulfillment |
+| Manufacturing / OT | **Manufacturing** | Shop-floor ops, quality, OT/IT convergence |
+| Cloud / Network Ops | **GCP Network Ops** | VPC flows, BGP routing, multi-cloud networking |
 
 ## 4. Connect and Deploy
 

@@ -113,12 +113,12 @@ steps:
                 mission_id: "__SCENARIO_NAME__"
               refresh: wait_for
 
-  # Execute remediation unless the operator explicitly denied. KQL: when the
-  # await step was skipped (auto-remediate path) the approved field doesn't
-  # exist → `: false` doesn't match → NOT(no-match) → true → executes.
+  # Execute only when auto-remediate explicitly opted out of approval, or when
+  # the operator approved. If requires_approval is true but approval was skipped
+  # or denied, neither branch matches and remediation must not run.
   - name: execute_remediation
     type: if
-    condition: "NOT steps.await_operator_approval.output.approved : false"
+    condition: "inputs.requires_approval : false OR steps.await_operator_approval.output.approved : true"
     steps:
       - name: queue_remediation
         type: elasticsearch.index
