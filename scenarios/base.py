@@ -722,9 +722,9 @@ Use `{p_remediation_action}` with these parameters:
 - `channel` — the fault channel number (1–20)
 - `error_type` — the error type identifier
 - `justification` — brief explanation
-- `dry_run` — `false` for actual remediation
+- `dry_run` — `false` for actual remediation (required for the chaos controller to resolve the fault)
 - `case_id` — **ALWAYS** pass this if you retrieved a case ID earlier in the conversation; never rely on tag-based search to find the case
-- `requires_approval` — **boolean**; see HITL vs auto-remediate rules below
+- `approval_mode` — **string** `required` or `skip`; see HITL vs auto-remediate rules below
 
 Once `{p_remediation_action}` returns successfully, report remediation as complete.
 Do NOT re-query logs to verify — the fix takes several minutes to propagate through the system.
@@ -740,15 +740,13 @@ Use `{p_escalation_action}` with:
 
 ## HITL Channels (1–15)
 
-Always pass `requires_approval: true` (boolean). The workflow pauses for operator
-approval before queueing remediation. Never pass `requires_approval: false` for
-channels 1–15, even if the user message says "execute" — approval is mandatory.
+Always pass `approval_mode: required`. The workflow pauses at waitForInput until
+the operator approves. Never pass `approval_mode: skip` for channels 1–15.
 
 ## Auto-Remediate Channels (16–20)
 
-Pass `requires_approval: false` only when the invoking workflow message explicitly
-includes `requires_approval: false` (Significant Event Notification Auto-Remediate).
-Otherwise default to `requires_approval: true`.
+Pass `approval_mode: skip` only when the Significant Event Auto-Remediate workflow
+message explicitly includes it. Always pass `dry_run: false`.
 """
         return {
             "id": f"{ns}-remediation-guide",

@@ -126,18 +126,18 @@ steps:
         input: >
           Case {{ steps.create_case.output.id }} has been opened. Invoke the
           remediation_action workflow tool (do not queue remediation yourself).
-          You MUST pass requires_approval as boolean true — never false on this
-          HITL path. Parameters:
+          You MUST pass approval_mode: required (string) — never skip on HITL.
+          Parameters:
           - action_type: {{ event.rule.tags[2] }}
           - channel: {{ event.rule.tags[3] }}
           - error_type: {{ event.rule.tags[1] }}
           - case_id: {{ steps.create_case.output.id }}
           - dry_run: false
-          - requires_approval: true
+          - approval_mode: required
           - justification: Operator approval requested via Agent Builder
 
-          The workflow pauses at waitForInput until the operator approves.
-          Do not call resume_workflow_execution or pass requires_approval: false.
+          The remediation workflow pauses at waitForInput until the operator
+          approves in Agent Builder. Do not pass approval_mode: skip.
           If the operator denies, add a brief case comment — do not retry.
           If approved, the workflow queues remediation and closes the case.
     timeout: 30m

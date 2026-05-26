@@ -96,7 +96,7 @@ class KbMixin:
 
         remediation_action = ch_data.get("remediation_action", "remediate")
         ch_int = int(ch_num)
-        requires_approval = ch_int <= 15
+        approval_mode = "required" if ch_int <= 15 else "skip"
         investigation_notes = ch_data.get("investigation_notes", "")
         investigation_section = ""
         if investigation_notes:
@@ -128,5 +128,5 @@ class KbMixin:
 - Verify if errors correlate with infrastructure events
 
 ## Remediation
-When the user asks you to fix or remediate this issue, use `{self.scenario.prefixed_tool_id("remediation_action")}` with action_type: {remediation_action}, channel: {ch_num}, requires_approval: {str(requires_approval).lower()}, and a justification. Channels 1–15 must use requires_approval: true (workflow pauses for operator approval). Only pass requires_approval: false when the Auto-Remediate notification workflow explicitly requests it. Once the tool returns successfully, report remediation as complete. Do NOT search for errors after remediation — the fix takes several minutes to propagate, so residual errors are expected immediately after.
+When the user asks you to fix or remediate this issue, use `{self.scenario.prefixed_tool_id("remediation_action")}` with action_type: {remediation_action}, channel: {ch_num}, approval_mode: {approval_mode}, dry_run: false, and a justification. Channels 1–15 must use approval_mode: required (workflow pauses for operator approval). Only pass approval_mode: skip when the Auto-Remediate notification workflow explicitly requests it. Once the tool returns successfully, report remediation as complete. Do NOT search for errors after remediation — the fix takes several minutes to propagate, so residual errors are expected immediately after.
 """

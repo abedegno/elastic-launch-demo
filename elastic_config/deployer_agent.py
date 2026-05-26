@@ -30,10 +30,10 @@ class AgentMixin:
                     "type": "workflow",
                     "description": (
                         "Execute remediation actions for anomalies. Triggers the "
-                        "Remediation Action workflow. Always pass requires_approval "
-                        "(boolean): true for HITL / manual / channels 1–15 — workflow "
-                        "pauses for operator approval; false only when the Significant "
-                        "Event Auto-Remediate workflow explicitly requests it."
+                        "Remediation Action workflow. Pass approval_mode (string): "
+                        "required for HITL / channels 1–15 (pauses at waitForInput); "
+                        "skip only for Significant Event Auto-Remediate. Pass "
+                        "dry_run: false to resolve the fault."
                     ),
                     "configuration": {"workflow_id": wf_id},
                 })
