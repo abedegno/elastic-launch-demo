@@ -881,7 +881,12 @@ async def launch_setup(body: dict):
     explicit_otlp = body.get("otlp_url") or ""
 
     scenario = _get_scenario_by_id(scenario_id)
-    deployer = ScenarioDeployer(scenario, elastic_url, kibana_url, api_key, KIBANA_PROXY)
+    cloud_api_key = (body.get("cloud_api_key") or "").strip()
+    deployer = ScenarioDeployer(
+        scenario, elastic_url, kibana_url, api_key,
+        kibana_proxy=KIBANA_PROXY,
+        cloud_api_key=cloud_api_key,
+    )
 
     # Use scenario_id as deployment_id
     deployment_id = scenario_id
@@ -942,6 +947,7 @@ async def launch_setup(body: dict):
                 elastic_url=elastic_url,
                 elastic_api_key=api_key,
                 kibana_url=kibana_url,
+                cloud_api_key=cloud_api_key,
             )
 
             logger.info("Deployment %s (%s) live", deployment_id, scenario_id)

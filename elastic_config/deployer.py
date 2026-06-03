@@ -75,6 +75,7 @@ class ScenarioDeployer(
         kibana_url: str,
         api_key: str,
         kibana_proxy: str = "",
+        cloud_api_key: str = "",
     ):
         self.scenario = scenario
         self.elastic_url = elastic_url.strip().rstrip("/")
@@ -83,11 +84,16 @@ class ScenarioDeployer(
         # kibana_display_url is used in user-facing links (workflows, agent).
         # Falls back to the real kibana_url if no proxy is configured.
         self.kibana_display_url = kibana_proxy.strip().rstrip("/") or self.kibana_url
+        self.cloud_api_key = cloud_api_key.strip() if cloud_api_key else ""
         self.ns = scenario.namespace
         self.progress = DeployProgress()
         self._workflow_ids: dict[str, str] = {}     # name fragment -> workflow ID
         self._created_tool_ids: list[str] = []     # tools that were actually created
         self._created_skill_ids: list[str] = []    # skill IDs attached to the agent
+
+    def _is_elastic_cloud(self) -> bool:
+        """Detect Elastic Cloud from Kibana URL pattern."""
+        return ".kb." in self.kibana_url and ".elastic.cloud" in self.kibana_url
 
     # ── Public API ─────────────────────────────────────────────────────
 

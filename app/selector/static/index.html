@@ -670,6 +670,7 @@
         const kibanaUrl = document.getElementById('kibana-url').value.trim();
         const esInput = document.getElementById('es-url');
         const otlpInput = document.getElementById('otlp-url');
+        const cloudKeyGroup = document.getElementById('cloud-api-key-group');
 
         if (kibanaUrl && kibanaUrl.includes('.kb.')) {
             if (!esInput.dataset.manual) {
@@ -681,6 +682,10 @@
                 otlpInput.value = otlp;
             }
         }
+
+        // Show Cloud API key field when targeting Elastic Cloud
+        const isCloud = kibanaUrl.includes('.kb.') && kibanaUrl.includes('.elastic.cloud');
+        cloudKeyGroup.style.display = isCloud ? '' : 'none';
     }
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -777,10 +782,12 @@
             const apiKey = document.getElementById('api-key').value.trim();
             const esUrl = document.getElementById('es-url').value.trim() || undefined;
             const otlpUrl = document.getElementById('otlp-url').value.trim() || undefined;
+            const cloudApiKey = document.getElementById('cloud-api-key')?.value.trim() || undefined;
             body.kibana_url = kibanaUrl;
             body.api_key = apiKey;
             if (esUrl) body.elastic_url = esUrl;
             if (otlpUrl) body.otlp_url = otlpUrl;
+            if (cloudApiKey) body.cloud_api_key = cloudApiKey;
         }
 
         cardErrors.delete(scenarioId);
