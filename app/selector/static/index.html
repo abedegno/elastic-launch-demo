@@ -523,6 +523,15 @@
         // Load scenarios
         try {
             scenarios = await (await fetch('/api/scenarios')).json();
+            await Promise.all(scenarios.map(async (s) => {
+                try {
+                    const r = await fetch(`/api/setup/has-slides?scenario_id=${s.id}`);
+                    const d = await r.json();
+                    s.has_slides = !!d.has_slides;
+                } catch (e) {
+                    s.has_slides = false;
+                }
+            }));
         } catch (e) {
             scenarios = [];
         }
@@ -638,7 +647,11 @@
             } else if (isTearingDown) {
                 actions = `<button class="card-btn card-btn-teardown" disabled>${teardownLabel}</button>`;
             } else if (dep) {
+                const slidesBtn = s.has_slides
+                    ? `<a class="card-btn card-btn-slides" href="/slides?deployment_id=${dep.deployment_id}" target="_blank" rel="noopener">Slides</a>`
+                    : '';
                 actions = `
+                    ${slidesBtn}
                     <a class="card-btn card-btn-exec" href="${dep.kibana_display_url}/app/dashboards#/view/${dep.namespace}-business-exec-dashboard" target="_blank" rel="noopener">Business Dashboard</a>
                     <a class="card-btn card-btn-ops" href="${dep.kibana_display_url}/app/dashboards#/view/${dep.namespace}-exec-dashboard" target="_blank" rel="noopener">Operations Dashboard</a>
                     <a class="card-btn card-btn-chaos" href="/chaos?deployment_id=${dep.deployment_id}">Chaos</a>
