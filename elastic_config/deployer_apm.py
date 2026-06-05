@@ -250,8 +250,35 @@ class ApmMixin:
                         "aggs": {
                             "@timestamp": {"max": {"field": "@timestamp"}},
                             "transaction_throughput": {"rate": {"unit": "minute"}},
+                            # Compute average transaction latency from
+                            # summary.sum / summary.value_count rather than
+                            # avg(histogram). The synthetic APM rollup backfill
+                            # writes summary.sum and summary.value_count as
+                            # plain scalar fields that aggregate correctly, but
+                            # the histogram-typed parent field isn't populated
+                            # in a way that supports avg() across synthetic
+                            # docs — leaving the latency detector with no
+                            # training signal and model bounds stuck at
+                            # [0, 0]. The bucket_script path works for both
+                            # synthetic and live data and is mathematically
+                            # equivalent to avg of the histogram.
+                            "latency_sum_us": {
+                                "sum": {"field": "metrics.transaction.duration.summary.sum"}
+                            },
+                            "latency_count": {
+                                "sum": {"field": "metrics.transaction.duration.summary.value_count"}
+                            },
                             "transaction_latency": {
-                                "avg": {"field": "metrics.transaction.duration.histogram"}
+                                "bucket_script": {
+                                    "buckets_path": {
+                                        "sum": "latency_sum_us",
+                                        "count": "latency_count",
+                                    },
+                                    "script": (
+                                        "if (params.count == 0) { return 0; } "
+                                        "else { return params.sum / params.count; }"
+                                    ),
+                                }
                             },
                             "error_count": {
                                 "filter": {"term": {"attributes.event.outcome": "failure"}},
