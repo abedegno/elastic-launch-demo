@@ -165,7 +165,7 @@ class ApmMixin:
                     },
                 },
                 "analysis_config": {
-                    "bucket_span": "15m",
+                    "bucket_span": self.scenario.apm_ml_bucket_span,
                     "summary_count_field_name": "doc_count",
                     "detectors": [
                         {
