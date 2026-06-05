@@ -250,19 +250,28 @@ class ApmMixin:
                         "aggs": {
                             "@timestamp": {"max": {"field": "@timestamp"}},
                             "transaction_throughput": {"rate": {"unit": "minute"}},
-                            # Compute average transaction latency from
-                            # summary.sum / summary.value_count rather than
-                            # avg(histogram). The synthetic APM rollup backfill
-                            # writes summary.sum and summary.value_count as
-                            # plain scalar fields that aggregate correctly, but
-                            # the histogram-typed parent field isn't populated
-                            # in a way that supports avg() across synthetic
-                            # docs — leaving the latency detector with no
-                            # training signal and model bounds stuck at
-                            # [0, 0]. The bucket_script path works for both
-                            # synthetic and live data and is mathematically
-                            # equivalent to avg of the histogram.
-                            "latency_sum_us": {
+                            # Compute average transaction latency by summing
+                            # BOTH the parent aggregate_metric_double field
+                            # AND the flat .sum child field.
+                            #
+                            # Synthetic APM rollup backfill: writes the flat
+                            # .sum correctly but the parent .sum stays as
+                            # ~5.97e-315 (uninitialised double from the
+                            # mapping race fixed by _seed_data_streams, but
+                            # already-written docs stay broken).
+                            # Live OTel data: writes the parent correctly
+                            # but the flat .sum is 0 (OTel doesn't promote
+                            # it down).
+                            # Summing both works for either dataset: in any
+                            # given doc one of the two is the real value and
+                            # the other is ~0, so the sum equals the real
+                            # total. Synthetic's ~5.97e-315 is below any
+                            # realistic latency value and contributes
+                            # nothing meaningful even when accumulated.
+                            "latency_sum_parent": {
+                                "sum": {"field": "metrics.transaction.duration.summary"}
+                            },
+                            "latency_sum_flat": {
                                 "sum": {"field": "metrics.transaction.duration.summary.sum"}
                             },
                             "latency_count": {
@@ -271,12 +280,15 @@ class ApmMixin:
                             "transaction_latency": {
                                 "bucket_script": {
                                     "buckets_path": {
-                                        "sum": "latency_sum_us",
+                                        "sum_p": "latency_sum_parent",
+                                        "sum_f": "latency_sum_flat",
                                         "count": "latency_count",
                                     },
                                     "script": (
+                                        "double p = Double.isNaN(params.sum_p) ? 0 : params.sum_p; "
+                                        "double f = Double.isNaN(params.sum_f) ? 0 : params.sum_f; "
                                         "if (params.count == 0) { return 0; } "
-                                        "else { return params.sum / params.count; }"
+                                        "else { return (p + f) / params.count; }"
                                     ),
                                 }
                             },
