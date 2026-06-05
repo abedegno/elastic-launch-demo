@@ -447,6 +447,38 @@ async def chaos_page(deployment_id: Optional[str] = None):
     return HTMLResponse(content=_inject_theme(html, deployment_id))
 
 
+@app.get("/slides", response_class=HTMLResponse)
+async def slides(deployment_id: Optional[str] = None):
+    """Per-scenario HTML slide deck. Looks up the deployment's scenario and
+    serves scenarios/<scenario_id>/static/slides.html, or 404 if none."""
+    if not deployment_id:
+        return JSONResponse(status_code=400, content={"error": "deployment_id required"})
+    inst = registry.get(deployment_id)
+    if inst:
+        scenario_id = inst.ctx.scenario.scenario_id
+    else:
+        rec = store.get(deployment_id)
+        if not rec:
+            return JSONResponse(status_code=404, content={"error": "deployment not found"})
+        scenario_id = rec["scenario_id"]
+    slides_path = os.path.join(
+        _base, "..", "scenarios", scenario_id, "static", "slides.html"
+    )
+    if not os.path.isfile(slides_path):
+        return JSONResponse(status_code=404, content={"error": f"no slides for scenario '{scenario_id}'"})
+    with open(slides_path) as f:
+        return HTMLResponse(content=f.read())
+
+
+@app.get("/api/setup/has-slides")
+async def has_slides(scenario_id: str):
+    """Return whether the given scenario has a slide deck."""
+    slides_path = os.path.join(
+        _base, "..", "scenarios", scenario_id, "static", "slides.html"
+    )
+    return {"has_slides": os.path.isfile(slides_path)}
+
+
 # ── Scenario API ───────────────────────────────────────────────────────────
 
 
