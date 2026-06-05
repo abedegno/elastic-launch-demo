@@ -6,6 +6,7 @@ import random
 import time
 
 from app.services.base_service import BaseService
+from scenarios.telecom.executive_kpis import emit_executive_business_metrics_if_eligible
 
 
 class BssBillingService(BaseService):
@@ -36,6 +37,8 @@ class BssBillingService(BaseService):
         self.emit_metric("bss_billing.cdr_processing_rate", cdr_rate, "cdr/min")
         self.emit_metric("bss_billing.mediation_queue_depth", float(random.randint(100, 500) if not active_channels else random.randint(50000, 200000)), "cdrs")
         self.emit_metric("bss_billing.revenue_per_hour", round(random.uniform(15000, 45000), 2), "EUR")
+
+        emit_executive_business_metrics_if_eligible(self)
 
     def _emit_billing_operation(self) -> None:
         self._billing_count += 1
