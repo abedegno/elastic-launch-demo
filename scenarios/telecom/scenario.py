@@ -1451,11 +1451,11 @@ class TelecomScenario(BaseScenario):
 
     @property
     def apm_ml_bucket_span(self) -> str:
-        """5-minute buckets — balance between demo speed and signal strength.
-        Anomaly scores surface within ~5-10 min of fault onset (vs ~15-20 min
-        with the default 15m), with enough per-bucket trace volume to score
-        confidently."""
-        return "5m"
+        """1-minute buckets so anomaly detection surfaces within ~2-3 min of
+        fault onset, fitting the 10-minute live demo arc. Requires the
+        trace-generator OTLP batching optimisation (send_traces_multi) to
+        produce enough per-bucket data — otherwise scores are too thin."""
+        return "1m"
 
     # ── Executive Dashboard ───────────────────────────────────────────
 

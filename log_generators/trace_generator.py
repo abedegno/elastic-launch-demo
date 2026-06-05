@@ -771,7 +771,7 @@ def run(client: OTLPClient, stop_event: threading.Event, chaos_controller=None,
             _spikes = chaos_controller.get_infra_spikes()
             _latency_mult = _spikes.get("latency_multiplier", 1.0)
 
-        num_traces = rng.randint(2, 5)
+        num_traces = rng.randint(8, 14)
 
         batch_by_service: dict[str, list] = {}
         for _ in range(num_traces):
@@ -796,11 +796,12 @@ def run(client: OTLPClient, stop_event: threading.Event, chaos_controller=None,
             for ch_id, svc, t_id, s_id in error_publish:
                 _trace_context_store.set_for_channel(ch_id, svc, t_id, s_id)
 
-        batch_span_count = 0
-        for svc, spans in batch_by_service.items():
-            if spans:
-                client.send_traces(resources[svc], spans)
-                batch_span_count += len(spans)
+        # Send ALL services in one OTLP POST. Each service's spans become a
+        # separate `resourceSpans` entry in the same request body.
+        multi_batch = [(resources[svc], spans) for svc, spans in batch_by_service.items() if spans]
+        batch_span_count = sum(len(spans) for _, spans in multi_batch)
+        if multi_batch:
+            client.send_traces_multi(multi_batch)
 
         total_traces += num_traces
         total_spans += batch_span_count
