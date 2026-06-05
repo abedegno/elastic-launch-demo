@@ -403,16 +403,6 @@ class ApmMixin:
             except Exception as exc:
                 logger.warning("Kibana APM ML environment registration failed (non-fatal): %s", exc)
 
-            # Capture a baseline snapshot of the just-trained healthy model.
-            # Used by the chaos controller to revert the model after a fault so
-            # iterative demo cycles always start from the same clean baseline.
-            try:
-                _capture_baseline_snapshot(
-                    client, self.elastic_url, self.api_key, job_id
-                )
-            except Exception as exc:
-                logger.warning("APM ML baseline snapshot capture failed (non-fatal): %s", exc)
-
             step.status = "ok"
             step.detail = f"Started ML job: {job_id}"
         except Exception as exc:
@@ -532,64 +522,7 @@ class ApmMixin:
                 pass
 
 
-# ── Baseline snapshot helpers (used by deploy + chaos controller) ───────────
-
-
-def _capture_baseline_snapshot(
-    client: httpx.Client,
-    elastic_url: str,
-    api_key: str,
-    job_id: str,
-) -> str | None:
-    """Force-flush the ML model, find the latest snapshot, and tag the job's
-    custom_settings with `baseline_snapshot_id`. The chaos controller uses
-    this on fault resolve to revert the model — so iterative demo cycles
-    always start from the same clean post-baseline-training state and don't
-    drift as the model adapts to fault data.
-
-    Returns the snapshot ID, or None on failure.
-    """
-    headers = _es_headers(api_key)
-    # Flush forces the model state to be persisted (creating a snapshot).
-    flush_resp = client.post(
-        f"{elastic_url}/_ml/anomaly_detectors/{job_id}/_flush",
-        headers=headers,
-        json={"calc_interim": False},
-    )
-    if flush_resp.status_code >= 300:
-        logger.warning("ML flush failed: %s", flush_resp.text[:200])
-        return None
-
-    # Give ES a moment to persist.
-    time.sleep(2)
-
-    # Find the most recent snapshot.
-    snap_resp = client.get(
-        f"{elastic_url}/_ml/anomaly_detectors/{job_id}/model_snapshots?desc=true&size=1",
-        headers=headers,
-    )
-    if snap_resp.status_code >= 300:
-        logger.warning("ML snapshot list failed: %s", snap_resp.text[:200])
-        return None
-    snaps = snap_resp.json().get("model_snapshots", [])
-    if not snaps:
-        logger.warning("No ML model snapshots found for %s yet", job_id)
-        return None
-    snapshot_id = snaps[0]["snapshot_id"]
-
-    # Tag the job so we can find this snapshot later (custom_settings is
-    # the only place ML lets us attach arbitrary metadata to a job).
-    upd_resp = client.post(
-        f"{elastic_url}/_ml/anomaly_detectors/{job_id}/_update",
-        headers=headers,
-        json={"custom_settings": {"baseline_snapshot_id": snapshot_id}},
-    )
-    if upd_resp.status_code >= 300:
-        logger.warning("ML custom_settings update failed: %s", upd_resp.text[:200])
-        return None
-
-    logger.info("Captured baseline ML snapshot %s for %s", snapshot_id, job_id)
-    return snapshot_id
+# ── ML model reset helper (used by chaos controller on fault resolve) ───────
 
 
 def revert_apm_ml_baseline(
@@ -597,11 +530,19 @@ def revert_apm_ml_baseline(
     api_key: str,
     namespace: str,
 ) -> bool:
-    """Revert the APM ML job to its captured baseline snapshot.
+    """Reset the APM ML job's trained model.
 
     Called by the chaos controller after a fault resolves so the model
     "forgets" any adaptation it did while the fault was active. Returns
     True on success.
+
+    Implementation: stop datafeed → close job → POST _reset → reopen →
+    restart datafeed. ES `_ml/.../_reset` keeps the job config but wipes
+    the trained model; the datafeed then re-trains from the existing
+    rollup data, which is the same source the original training used —
+    so the model returns to the same baseline state without us needing
+    to manage explicit snapshots (those APIs aren't available on
+    serverless).
 
     Safe to call from any thread; uses a private httpx.Client.
     """
@@ -610,22 +551,20 @@ def revert_apm_ml_baseline(
     headers = _es_headers(api_key)
 
     with httpx.Client(timeout=60.0, verify=True) as client:
-        # Look up the baseline snapshot id from the job's custom_settings.
+        # Confirm the job exists; bail quietly if not.
         job_resp = client.get(
             f"{elastic_url}/_ml/anomaly_detectors/{job_id}",
             headers=headers,
         )
         if job_resp.status_code >= 300:
-            logger.info("ML revert: job %s not found (status=%d)", job_id, job_resp.status_code)
-            return False
-        job = job_resp.json().get("jobs", [{}])[0]
-        snapshot_id = job.get("custom_settings", {}).get("baseline_snapshot_id")
-        if not snapshot_id:
-            logger.info("ML revert: no baseline_snapshot_id tagged on %s", job_id)
+            logger.info(
+                "ML reset: job %s not found (status=%d)",
+                job_id, job_resp.status_code,
+            )
             return False
 
         try:
-            # Stop datafeed → close job → revert → reopen → restart datafeed.
+            # Stop datafeed → close job → reset → reopen → restart datafeed.
             client.post(
                 f"{elastic_url}/_ml/datafeeds/{datafeed_id}/_stop",
                 headers=headers,
@@ -636,14 +575,12 @@ def revert_apm_ml_baseline(
                 headers=headers,
                 json={"force": True, "timeout": "30s"},
             )
-            revert_resp = client.post(
-                f"{elastic_url}/_ml/anomaly_detectors/{job_id}/"
-                f"model_snapshots/{snapshot_id}/_revert",
+            reset_resp = client.post(
+                f"{elastic_url}/_ml/anomaly_detectors/{job_id}/_reset",
                 headers=headers,
-                json={"delete_intervening_results": True},
             )
-            if revert_resp.status_code >= 300:
-                logger.warning("ML revert failed: %s", revert_resp.text[:300])
+            if reset_resp.status_code >= 300:
+                logger.warning("ML reset failed: %s", reset_resp.text[:300])
                 return False
             client.post(
                 f"{elastic_url}/_ml/anomaly_detectors/{job_id}/_open",
@@ -653,8 +590,8 @@ def revert_apm_ml_baseline(
                 f"{elastic_url}/_ml/datafeeds/{datafeed_id}/_start",
                 headers=headers,
             )
-            logger.info("Reverted ML job %s to baseline snapshot %s", job_id, snapshot_id)
+            logger.info("Reset ML job %s — model will re-train on existing rollup", job_id)
             return True
         except Exception as exc:
-            logger.warning("ML revert encountered error: %s", exc)
+            logger.warning("ML reset encountered error: %s", exc)
             return False
