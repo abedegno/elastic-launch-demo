@@ -338,6 +338,7 @@ body { font-family: 'Inter', -apple-system, system-ui, sans-serif; }"""
         "<!--THEME_CSS-->": f"<style>{css_override}</style>",
         "DEPLOYMENT_ID_PLACEHOLDER": deployment_id or "",
         "SCENARIO_NAME_PLACEHOLDER": scenario.scenario_name,
+        "SCENARIO_DESC_PLACEHOLDER": scenario.scenario_description,
         "SCENARIO_ID_PLACEHOLDER": scenario.scenario_id,
         "NAMESPACE_PLACEHOLDER": scenario.namespace,
         "MISSION_ID_PLACEHOLDER": mission_id,
@@ -467,7 +468,8 @@ async def slides(deployment_id: Optional[str] = None):
     if not os.path.isfile(slides_path):
         return JSONResponse(status_code=404, content={"error": f"no slides for scenario '{scenario_id}'"})
     with open(slides_path) as f:
-        return HTMLResponse(content=f.read())
+        html = f.read()
+    return HTMLResponse(content=_inject_theme(html, deployment_id))
 
 
 @app.get("/api/setup/has-slides")
