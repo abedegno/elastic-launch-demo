@@ -1451,6 +1451,80 @@ class TelecomScenario(BaseScenario):
             channel_label="Incident",
         )
 
+    # ── Executive Dashboard ───────────────────────────────────────────
+
+    @property
+    def executive_kpi_emitter_service_name(self) -> str:
+        return "bss-billing"
+
+    @property
+    def executive_dashboard_intro(self) -> str:
+        return (
+            "**Meridian Telecom 5G subscriber platform KPIs** — subscriber growth, "
+            "revenue & ARPU, network quality of experience, and retention. "
+            "Synthetic `business.*` OTLP gauges from `bss-billing`."
+        )
+
+    @property
+    def executive_kpi_sections(self) -> list[dict]:
+        return [
+            {
+                "header": "**Subscriber growth** — activations, MVNO, ports, eSIM",
+                "specs": [
+                    ("Activations / min", "metrics.business.activations_per_min"),
+                    ("MVNO net-adds / min", "metrics.business.mvno_net_adds_per_min"),
+                    ("Port-ins / min", "metrics.business.port_ins_per_min"),
+                    ("Port-outs / min", "metrics.business.port_outs_per_min"),
+                    ("eSIM provisions / min", "metrics.business.esim_provisions_per_min"),
+                    ("Active subscribers (M)", "metrics.business.active_subscribers_m"),
+                ],
+            },
+            {
+                "header": "**Revenue & ARPU** — total revenue, by-tier, overage, roaming",
+                "specs": [
+                    ("Total revenue (USD/min)", "metrics.business.revenue_usd_per_min"),
+                    ("Consumer ARPU (USD)", "metrics.business.consumer_arpu_usd"),
+                    ("Enterprise ARPU (USD)", "metrics.business.enterprise_arpu_usd"),
+                    ("MVNO partner revenue (USD/min)", "metrics.business.mvno_partner_revenue_usd_per_min"),
+                    ("Data overage charges (USD/min)", "metrics.business.data_overage_charges_usd_per_min"),
+                    ("Roaming revenue (USD/min)", "metrics.business.roaming_revenue_usd_per_min"),
+                ],
+            },
+            {
+                "header": "**Network & QoE** — handover, latency, voice, throughput",
+                "specs": [
+                    ("5G handover success (%)", "metrics.business.handover_success_pct"),
+                    ("RAN latency p95 (ms)", "metrics.business.ran_latency_p95_ms"),
+                    ("Voice MOS", "metrics.business.voice_mos"),
+                    ("Data session est. success (%)", "metrics.business.data_session_success_pct"),
+                    ("VoLTE call setup success (%)", "metrics.business.volte_call_setup_success_pct"),
+                    ("Throughput p50 (Mbps)", "metrics.business.throughput_p50_mbps"),
+                ],
+            },
+            {
+                "header": "**Retention & support** — churn, NPS, tickets",
+                "specs": [
+                    ("Voluntary churn rate (%)", "metrics.business.voluntary_churn_rate_pct"),
+                    ("NPS", "metrics.business.nps"),
+                    ("Support tickets / min", "metrics.business.support_tickets_per_min"),
+                    ("Avg ticket resolution (min)", "metrics.business.avg_ticket_resolution_min"),
+                    ("First-call resolution (%)", "metrics.business.first_call_resolution_pct"),
+                    ("Trouble-to-billing ratio (%)", "metrics.business.trouble_to_billing_ratio_pct"),
+                ],
+            },
+        ]
+
+    @property
+    def executive_trend_charts(self) -> list[dict]:
+        return [
+            {"title": "Total revenue (USD/min)", "field": "metrics.business.revenue_usd_per_min", "y_label": "USD/min"},
+            {"title": "Activations / min", "field": "metrics.business.activations_per_min", "y_label": "activations/min"},
+            {"title": "Active subscribers (M)", "field": "metrics.business.active_subscribers_m", "y_label": "subscribers (M)"},
+            {"title": "Voluntary churn rate (%)", "field": "metrics.business.voluntary_churn_rate_pct", "y_label": "%"},
+            {"title": "RAN p95 latency (ms)", "field": "metrics.business.ran_latency_p95_ms", "y_label": "ms"},
+            {"title": "NPS", "field": "metrics.business.nps", "y_label": "NPS"},
+        ]
+
     # ── Agent Config ──────────────────────────────────────────────────
 
     @property
