@@ -363,18 +363,12 @@ class ApmRollupGenerator:
                 "namespace": "default",
                 "type": "metrics",
             },
-            # The histogram + aggregate_metric_double fields MUST be written as
-            # top-level dotted keys so Elasticsearch indexes them as the actual
-            # histogram-typed / aggregate_metric_double-typed fields the mapping
-            # defines. When nested under a `metrics:` object, ES auto-flattens
-            # into separate `.values` / `.counts` / `.sum` scalar fields and the
-            # special-typed parent is empty — the APM ML latency detector then
-            # aggregates `avg(metrics.transaction.duration.histogram)` against a
-            # null field, learns bounds=[0,0], and never scores anomalies.
-            "metrics.transaction.duration.histogram": hist,
-            "metrics.transaction.duration.summary": {
-                "sum": total_duration,
-                "value_count": count,
+            "metrics": {
+                "transaction.duration.histogram": hist,
+                "transaction.duration.summary": {
+                    "sum": total_duration,
+                    "value_count": count,
+                },
             },
             "resource": {"attributes": resource_attrs},
             "scope": {"name": SCOPE_NAME},
