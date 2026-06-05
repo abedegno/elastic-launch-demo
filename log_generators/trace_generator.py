@@ -57,8 +57,12 @@ _GENERIC_EXCEPTIONS = {
 logger = logging.getLogger("trace-generator")
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-BATCH_INTERVAL_MIN = 2
-BATCH_INTERVAL_MAX = 4
+# Batches are sent every BATCH_INTERVAL_MIN..BATCH_INTERVAL_MAX seconds. Shorter
+# intervals yield richer per-bucket data for APM ML jobs (especially with smaller
+# bucket spans like 1m) — important for demo scenarios where you want anomaly
+# scores to surface within a few minutes of fault onset.
+BATCH_INTERVAL_MIN = 1
+BATCH_INTERVAL_MAX = 2
 
 # Span kind constants
 SPAN_KIND_INTERNAL = 1
