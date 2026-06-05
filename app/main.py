@@ -242,6 +242,17 @@ app.mount(
     name="selector-static",
 )
 
+# Mount per-scenario static dirs (for scenario-specific slides, images, etc.)
+_scenarios_root = os.path.join(os.path.dirname(__file__), "..", "scenarios")
+for _sid in sorted(os.listdir(_scenarios_root)):
+    _sdir = os.path.join(_scenarios_root, _sid, "static")
+    if os.path.isdir(_sdir):
+        app.mount(
+            f"/scenarios/{_sid}/static",
+            StaticFiles(directory=_sdir),
+            name=f"{_sid}-static",
+        )
+
 # ── Scenario helper ──────────────────────────────────────────────────────────
 
 
