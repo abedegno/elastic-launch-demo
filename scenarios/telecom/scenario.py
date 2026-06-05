@@ -1451,9 +1451,11 @@ class TelecomScenario(BaseScenario):
 
     @property
     def apm_ml_bucket_span(self) -> str:
-        """1-minute buckets so anomaly detection surfaces within ~2 min of fault
-        onset — fits the 10-minute live demo arc better than the 15m default."""
-        return "1m"
+        """5-minute buckets — balance between demo speed and signal strength.
+        Anomaly scores surface within ~5-10 min of fault onset (vs ~15-20 min
+        with the default 15m), with enough per-bucket trace volume to score
+        confidently."""
+        return "5m"
 
     # ── Executive Dashboard ───────────────────────────────────────────
 
