@@ -473,6 +473,11 @@ async def slides(deployment_id: Optional[str] = None):
 @app.get("/api/setup/has-slides")
 async def has_slides(scenario_id: str):
     """Return whether the given scenario has a slide deck."""
+    from scenarios import get_scenario
+    try:
+        get_scenario(scenario_id)
+    except KeyError:
+        return {"has_slides": False}
     slides_path = os.path.join(
         _base, "..", "scenarios", scenario_id, "static", "slides.html"
     )
