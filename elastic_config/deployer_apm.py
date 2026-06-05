@@ -438,3 +438,26 @@ class ApmMixin:
             )
         except Exception:
             pass
+
+    def _cleanup_apm_rollup(self, client: httpx.Client) -> None:
+        """Delete the synthetic APM rollup data streams so the next deploy
+        starts the ML job on a clean healthy baseline.
+
+        Without this, _deploy_apm_rollup appends new synthetic docs to the
+        existing data streams, and the freshly-recreated ML job trains on
+        cumulative history — including any prior live fault periods —
+        poisoning its 'normal' baseline for iterative demo cycles.
+        """
+        data_streams = [
+            "metrics-transaction.1m.otel-default",
+            "metrics-service_destination.1m.otel-default",
+            "metrics-service_summary.1m.otel-default",
+        ]
+        for ds in data_streams:
+            try:
+                client.delete(
+                    f"{self.elastic_url}/_data_stream/{ds}",
+                    headers=_es_headers(self.api_key),
+                )
+            except Exception:
+                pass

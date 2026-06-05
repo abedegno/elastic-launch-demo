@@ -260,6 +260,12 @@ class ScenarioDeployer(
         self._cleanup_apm_ml(client)
         results["apm_ml_cleaned"] = True
 
+        # Delete APM rollup data streams (synthetic backfill) so the next
+        # deploy's ML job trains on a clean baseline rather than cumulative
+        # history including prior live fault periods.
+        self._cleanup_apm_rollup(client)
+        results["apm_rollup_cleaned"] = True
+
         # Delete SLOs
         results["slos_deleted"] = self._cleanup_slos(client)
 
@@ -429,9 +435,10 @@ class ScenarioDeployer(
                 _notify(progress)
                 try:
                     self._cleanup_apm_ml(client)
+                    self._cleanup_apm_rollup(client)
                     self._cleanup_aiops_ml(client)
                     step.status = "ok"
-                    step.detail = "APM and AIOps ML jobs and datafeeds removed"
+                    step.detail = "APM and AIOps ML jobs, datafeeds, and rollup data removed"
                 except Exception as exc:
                     step.status = "failed"
                     step.detail = str(exc)
