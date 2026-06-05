@@ -1444,9 +1444,7 @@ class TelecomScenario(BaseScenario):
             status_info="#3b82f6",
             font_family="'Inter', 'Segoe UI', system-ui, sans-serif",
             font_mono="'JetBrains Mono', 'Fira Code', monospace",
-            dashboard_title="5G Network Operations Center",
             chaos_title="Incident Simulator",
-            landing_title="Meridian Telecom NOC",
             service_label="Service",
             channel_label="Incident",
         )
