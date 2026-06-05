@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from elastic_config.deployer_base import _es_headers, ProgressCallback
+from elastic_config.deployer_base import _es_headers, _kibana_headers, ProgressCallback
 
 logger = logging.getLogger("deployer")
 
@@ -343,6 +343,26 @@ class ApmMixin:
                 raise RuntimeError(f"ML datafeed start failed: {resp.text}")
 
             self._wait_for_apm_catchup(client, [f"datafeed-{job_id}"], timeout=120)
+
+            # Register the environment with the Kibana APM ML integration so the
+            # Service Map UI picks up our job (matches Superdemo's flow). Without
+            # this Kibana-side registration, the raw ES-created job exists but
+            # the APM Service Map does not surface its anomaly scores as node
+            # colouring. Idempotent: returns 200 {"jobCreated": true} even when
+            # the environment is already registered to our existing job.
+            try:
+                reg_resp = client.post(
+                    f"{self.kibana_url}/internal/apm/settings/anomaly-detection/jobs",
+                    headers=_kibana_headers(self.api_key),
+                    json={"environments": [env]},
+                )
+                if reg_resp.status_code >= 300:
+                    logger.warning(
+                        "Kibana APM ML environment registration returned HTTP %d (non-fatal): %s",
+                        reg_resp.status_code, reg_resp.text[:200],
+                    )
+            except Exception as exc:
+                logger.warning("Kibana APM ML environment registration failed (non-fatal): %s", exc)
 
             step.status = "ok"
             step.detail = f"Started ML job: {job_id}"

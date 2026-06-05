@@ -242,6 +242,18 @@ class ChaosController:
         if expired_ids and self._store and self._deployment_id:
             self._store.expire_channels(self._deployment_id, MAX_FAULT_DURATION)
 
+        # Mirror the manual-resolve spike-clearing semantics: when an auto-expire
+        # leaves no active channels, clear infra spikes back to baseline. Without
+        # this, CPU/memory/latency_multiplier stay elevated indefinitely after a
+        # silent timeout — confusing for demos where the user expects "back to
+        # green" once the fault is over.
+        if expired_ids:
+            any_active = any(c["state"] == ACTIVE for c in self._channels.values())
+            if not any_active:
+                self._infra_spikes = {
+                    k: (1.0 if k == "latency_multiplier" else 0) for k in self._infra_spikes
+                }
+
     def is_active(self, channel: int) -> bool:
         with self._lock:
             self._expire_stale()
