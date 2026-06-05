@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from app.config import CHANNEL_REGISTRY, CHANNEL_TIMEOUT
 
@@ -31,11 +31,18 @@ class ChaosController:
         channel_registry: dict[int, dict[str, Any]] | None = None,
         chaos_store: ChaosStore | None = None,
         deployment_id: str = "",
+        on_resolve: "Callable[[], None] | None" = None,
     ):
         self._lock = threading.RLock()
         self._channel_registry = channel_registry or CHANNEL_REGISTRY
         self._store = chaos_store
         self._deployment_id = deployment_id
+        # Called best-effort in a background thread when the last active
+        # channel resolves (manual or auto-expire). Used to revert the APM
+        # ML model to its baseline snapshot so iterative demo cycles always
+        # start from the same clean baseline. Errors are swallowed — this is
+        # purely a quality-of-life hook for repeat testing.
+        self._on_resolve = on_resolve
         self._channels: dict[int, dict[str, Any]] = {}
         for ch_id in self._channel_registry:
             self._channels[ch_id] = {
@@ -207,6 +214,12 @@ class ChaosController:
 
         ch_def = self._channel_registry[channel]
         logger.info("CHAOS: Channel %d [%s] RESOLVED", channel, ch_def["name"])
+
+        # If this was the last active channel, fire the on_resolve hook
+        # (e.g. revert the APM ML model to baseline) in a background thread.
+        if not any_active:
+            self._fire_on_resolve_async()
+
         return {
             "status": "resolved",
             "channel": channel,
@@ -253,6 +266,21 @@ class ChaosController:
                 self._infra_spikes = {
                     k: (1.0 if k == "latency_multiplier" else 0) for k in self._infra_spikes
                 }
+                self._fire_on_resolve_async()
+
+    def _fire_on_resolve_async(self) -> None:
+        """Run the on_resolve hook in a daemon thread. Best-effort: any
+        exception is swallowed and logged. Avoids blocking chaos UI calls on
+        an HTTP-bound ML revert."""
+        if not self._on_resolve:
+            return
+        cb = self._on_resolve
+        def _run():
+            try:
+                cb()
+            except Exception as exc:
+                logger.warning("chaos on_resolve hook failed (non-fatal): %s", exc)
+        threading.Thread(target=_run, name="chaos-on-resolve", daemon=True).start()
 
     def is_active(self, channel: int) -> bool:
         with self._lock:
