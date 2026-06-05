@@ -7,7 +7,7 @@ import random
 import time
 from typing import Any
 
-from scenarios.base import BaseScenario, CountdownConfig, UITheme
+from scenarios.base import BaseScenario, UITheme
 
 
 class TelecomScenario(BaseScenario):
@@ -1450,10 +1450,6 @@ class TelecomScenario(BaseScenario):
             service_label="Service",
             channel_label="Incident",
         )
-
-    @property
-    def countdown_config(self) -> CountdownConfig:
-        return CountdownConfig(enabled=False)
 
     # ── Agent Config ──────────────────────────────────────────────────
 
